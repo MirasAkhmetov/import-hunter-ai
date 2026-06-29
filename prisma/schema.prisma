@@ -1,0 +1,356 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  source         String   @default("kaspi")
+  title          String
+  brand          String?
+  model          String?
+  category       String?
+  price          Float
+  currency       String   @default("KZT")
+  url            String
+  imageUrl       String?
+  rating         Float?
+  reviewCount    Int?
+  specifications Json?
+  isSaved        Boolean  @default(false)
+  favorite       Boolean  @default(false)
+  userNotes      String?
+  aiNotes        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  marketplaceResults MarketplaceResult[]
+  profitAnalyses     ProfitAnalysis[]
+  analysisJobs       AnalysisJob[]
+  basketItems        PurchaseBasketItem[]
+  watchlistItems     WatchlistItem[]
+  priceHistory       PriceHistory[]
+  userNote           UserNote?
+}
+
+model MarketplaceResult {
+  id             String   @id @default(cuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketplace    String
+  country        String
+  title          String
+  price          Float
+  currency       String
+  url            String
+  imageUrl       String?
+  sellerName     String?
+  sellerRating   Float?
+  specifications Json?
+  matchScore     Float    @default(0)
+  riskScore      Float    @default(0)
+  manualStatus   String   @default("review")
+  favorite       Boolean  @default(false)
+  userNotes      String?
+  aiNotes        String?
+  originalPrice       Float?
+  correctedPrice      Float?
+  finalPrice          Float?
+  priceSource         String?
+  linkStatus          String?
+  priceVerifiedAt     DateTime?
+  manuallyCorrectedAt DateTime?
+  correctionReason    String?
+  correctionComment   String?
+  isMockPrice         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  profitAnalyses          ProfitAnalysis[]
+  basketItems             PurchaseBasketItem[]
+  watchlistItems          WatchlistItem[]
+  priceHistory            PriceHistory[]
+  alertNotifications      AlertNotification[]
+  userNote                UserNote?
+  priceCorrectionHistory  PriceCorrectionHistory[]
+}
+
+model ProfitAnalysis {
+  id                   String            @id @default(cuid())
+  productId            String
+  product              Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketplaceResultId  String
+  marketplaceResult    MarketplaceResult @relation(fields: [marketplaceResultId], references: [id], onDelete: Cascade)
+  kaspiPriceKzt        Float
+  purchasePriceKzt     Float
+  deliveryCostKzt      Float
+  customsCostKzt       Float
+  kaspiCommissionKzt   Float
+  taxKzt               Float
+  adsCostKzt           Float
+  totalCostKzt         Float
+  netProfitKzt         Float
+  marginPercent        Float
+  roiPercent           Float
+  recommendation       String?
+  createdAt            DateTime          @default(now())
+}
+
+model AnalysisJob {
+  id        String   @id @default(cuid())
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  kaspiUrl  String
+  status    String   @default("pending")
+  error     String?
+  result    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Settings {
+  id                     String   @id @default("default")
+  tryToKzt               Float    @default(14.5)
+  aedToKzt               Float    @default(140.0)
+  cnyToKzt               Float    @default(72.0)
+  usdToKzt               Float    @default(515.0)
+  inrToKzt               Float    @default(6.2)
+  rubToKzt               Float    @default(5.5)
+  deliveryTurkeyKzt      Float    @default(3500)
+  deliveryUaeKzt         Float    @default(5000)
+  deliveryChinaKzt       Float    @default(4000)
+  deliveryIndiaKzt       Float    @default(4500)
+  deliveryRussiaKzt      Float    @default(4000)
+  kaspiCommissionPercent Float    @default(12)
+  taxPercent             Float    @default(3)
+  adsPercent             Float    @default(5)
+  minMarginPercent       Float    @default(15)
+  minRoiPercent          Float    @default(20)
+  searchApiProvider      String?
+  searchApiKey           String?
+  mockBrandContactsEnabled Boolean @default(false)
+  updatedAt              DateTime @updatedAt
+}
+
+model PurchaseBasket {
+  id        String               @id @default("default")
+  items     PurchaseBasketItem[]
+  updatedAt DateTime             @updatedAt
+}
+
+model PurchaseBasketItem {
+  id                  String            @id @default(cuid())
+  basketId            String            @default("default")
+  basket              PurchaseBasket    @relation(fields: [basketId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketplaceResultId String
+  marketplaceResult   MarketplaceResult @relation(fields: [marketplaceResultId], references: [id], onDelete: Cascade)
+  title               String
+  marketplace         String
+  country             String
+  quantity            Int               @default(1)
+  purchasePrice       Float
+  purchaseCurrency    String            @default("KZT")
+  deliveryPerUnit       Float             @default(0)
+  extraCosts          Float             @default(0)
+  targetSalePrice     Float
+  imageUrl            String?
+  url                 String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+}
+
+model WatchlistItem {
+  id                  String            @id @default(cuid())
+  productId           String
+  product             Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketplaceResultId String
+  marketplaceResult   MarketplaceResult @relation(fields: [marketplaceResultId], references: [id], onDelete: Cascade)
+  title               String
+  marketplace         String
+  country             String
+  targetPurchasePrice Float
+  minProfit           Float             @default(0)
+  minRoi              Float             @default(20)
+  currentPrice        Float
+  currentCurrency     String            @default("KZT")
+  lastCheckedAt       DateTime          @default(now())
+  status              String            @default("active")
+  buyAlertEnabled     Boolean           @default(false)
+  targetBuyPrice      Float?
+  targetQuantity      Int               @default(1)
+  alertTriggeredAt    DateTime?
+  alertStatus         String            @default("active")
+  comment             String?
+  imageUrl            String?
+  url                 String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  alertNotifications AlertNotification[]
+}
+
+model PriceHistory {
+  id                  String            @id @default(cuid())
+  productId           String
+  product             Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketplaceResultId String
+  marketplaceResult   MarketplaceResult @relation(fields: [marketplaceResultId], references: [id], onDelete: Cascade)
+  marketplace         String
+  country             String
+  price               Float
+  currency            String
+  priceKzt            Float
+  checkedAt           DateTime          @default(now())
+}
+
+model UserNote {
+  id                  String             @id @default(cuid())
+  productId           String?            @unique
+  product             Product?           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketplaceResultId String?            @unique
+  marketplaceResult   MarketplaceResult? @relation(fields: [marketplaceResultId], references: [id], onDelete: Cascade)
+  userNotes           String?
+  aiNotes             String?
+  updatedAt           DateTime           @updatedAt
+}
+
+model AlertNotification {
+  id                  String            @id @default(cuid())
+  watchlistItemId     String?
+  watchlistItem       WatchlistItem?    @relation(fields: [watchlistItemId], references: [id], onDelete: SetNull)
+  productId           String
+  marketplaceResultId String
+  marketplaceResult   MarketplaceResult @relation(fields: [marketplaceResultId], references: [id], onDelete: Cascade)
+  type                String
+  title               String
+  message             String
+  oldPrice            Float?
+  currentPrice        Float?
+  targetPrice         Float?
+  potentialProfit     Float?
+  roiPercent          Float?
+  status              String            @default("unread")
+  createdAt           DateTime          @default(now())
+  readAt              DateTime?
+}
+
+model BrandContact {
+  id                 String   @id @default(cuid())
+  productId          String
+  brand              String
+  companyName        String
+  role               String
+  country            String
+  region             String
+  website            String?
+  email              String?
+  phone              String?
+  contactFormUrl     String?
+  linkedinUrl        String?
+  sourceUrl          String?
+  sourceTitle        String?
+  confidenceScore    Int      @default(0)
+  language           String   @default("ru")
+  status             String   @default("found")
+  verificationStatus String   @default("needs_manual_check")
+  confirmedFacts     String?
+  checkedAt          DateTime?
+  isMock             Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  outreachEmails OutreachEmail[]
+  evidence       BrandContactEvidence[]
+}
+
+model BrandContactEvidence {
+  id             String       @id @default(cuid())
+  brandContactId String
+  brandContact   BrandContact @relation(fields: [brandContactId], references: [id], onDelete: Cascade)
+  evidenceType   String
+  sourceUrl      String
+  sourceTitle    String?
+  excerpt        String       @db.Text
+  extractedValue String?
+  createdAt      DateTime     @default(now())
+}
+
+model PriceCorrectionHistory {
+  id                  String            @id @default(cuid())
+  marketplaceResultId String
+  marketplaceResult   MarketplaceResult @relation(fields: [marketplaceResultId], references: [id], onDelete: Cascade)
+  originalPrice       Float
+  correctedPrice      Float
+  currency            String
+  reason              String
+  comment             String?
+  correctedBy           String?
+  createdAt           DateTime          @default(now())
+}
+
+model OutreachEmail {
+  id             String       @id @default(cuid())
+  productId      String
+  brandContactId String
+  brandContact   BrandContact @relation(fields: [brandContactId], references: [id], onDelete: Cascade)
+  language       String
+  toEmail        String
+  subject        String
+  body           String       @db.Text
+  status         String       @default("draft")
+  createdAt      DateTime     @default(now())
+  sentAt         DateTime?
+}
+
+model CompanyProfile {
+  id                  String   @id @default("default")
+  companyName         String
+  personName          String
+  position            String
+  country             String
+  city                String
+  email               String
+  phone               String
+  website             String?
+  marketplaceChannels String
+  businessDescription String   @db.Text
+  updatedAt           DateTime @updatedAt
+}
+
+model AnalysisRun {
+  id                      String   @id @default(cuid())
+  kaspiUrl                String
+  productId               String?
+  status                  String   @default("completed")
+  source                  String   @default("kaspi")
+  productTitle            String
+  productBrand            String?
+  productCategory         String?
+  productImageUrl         String?
+  kaspiPriceKzt           Float
+  totalMarketplaceResults Int      @default(0)
+  bestCountry             String?
+  bestMarketplace         String?
+  bestPurchasePriceKzt    Float?
+  bestNetProfitKzt        Float?
+  bestRoiPercent          Float?
+  aiRecommendation        String?  @db.Text
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  snapshots AnalysisSnapshot[]
+}
+
+model AnalysisSnapshot {
+  id            String      @id @default(cuid())
+  analysisRunId String
+  analysisRun   AnalysisRun @relation(fields: [analysisRunId], references: [id], onDelete: Cascade)
+  snapshotType  String
+  data          Json
+  createdAt     DateTime    @default(now())
+}
