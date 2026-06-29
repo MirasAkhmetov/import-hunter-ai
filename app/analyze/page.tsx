@@ -19,11 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AnalysisStatus, AppSettings } from "@/lib/types";
 import { DEFAULT_SETTINGS, MARKETPLACE_LABELS, COUNTRY_LABELS } from "@/lib/types";
-import { TURKEY_MARKETPLACES } from "@/lib/marketplaces/turkey";
-import { UAE_MARKETPLACES } from "@/lib/marketplaces/uae";
-import { CHINA_MARKETPLACES } from "@/lib/marketplaces/china";
-import { INDIA_MARKETPLACES } from "@/lib/marketplaces/india";
-import { RUSSIA_MARKETPLACES } from "@/lib/marketplaces/russia";
 import { COUNTRY_MARKETPLACES } from "@/lib/types/extended";
 import type { AnalysisResult } from "@/lib/types/analysisResult";
 import {
@@ -58,11 +53,11 @@ function marketplaceOptionsForCountry(countryFilter: CountryFilterId) {
 
   if (countryFilter === "all") {
     const ids = [
-      ...TURKEY_MARKETPLACES,
-      ...UAE_MARKETPLACES.filter((id) => id === "amazon-ae" || id === "noon"),
-      ...CHINA_MARKETPLACES,
-      ...INDIA_MARKETPLACES,
-      ...RUSSIA_MARKETPLACES,
+      ...COUNTRY_MARKETPLACES.TR,
+      ...COUNTRY_MARKETPLACES.AE.filter((id) => id === "amazon-ae" || id === "noon"),
+      ...COUNTRY_MARKETPLACES.CN,
+      ...COUNTRY_MARKETPLACES.IN,
+      ...COUNTRY_MARKETPLACES.RU,
     ];
     return [
       allOption,
@@ -220,7 +215,7 @@ export default function AnalyzePage() {
 
       if (!data.success) {
         setStatus("failed");
-        setError(data.error);
+        setError(data.error ?? "Не удалось выполнить анализ");
         return;
       }
 
@@ -228,9 +223,15 @@ export default function AnalyzePage() {
       setProgress(100);
       const analysis: AnalysisResult = data.data;
       setResult(analysis);
-      setSelectedProfitIndex(0);    } catch {
+      setSelectedProfitIndex(0);    } catch (err) {
       setStatus("failed");
-      setError("Ошибка сети. Проверьте подключение.");
+      const isTimeout =
+        err instanceof DOMException && err.name === "AbortError";
+      setError(
+        isTimeout
+          ? "Анализ занял слишком много времени. Попробуйте снова или выберите одну страну в фильтре."
+          : "Ошибка сети. Проверьте подключение и что сервер запущен (npm run dev)."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -343,10 +344,26 @@ export default function AnalyzePage() {
     });
   }, [result, profitUserInputs, appSettings]);
 
-  const dedupedResults = useMemo(
-    () => pickBestPerMarketplace(recalculatedResults),
-    [recalculatedResults]
-  );
+  const dedupedResults = useMemo(() => {
+    const deduped = pickBestPerMarketplace(recalculatedResults);
+    return [...deduped].sort((a, b) => {
+      const aNotFound = a.searchMethod === "not_found";
+      const bNotFound = b.searchMethod === "not_found";
+      if (aNotFound !== bNotFound) return aNotFound ? 1 : -1;
+
+      const aVerified = !a.isMockPrice && getMarketplaceDisplayPrice(a) > 0;
+      const bVerified = !b.isMockPrice && getMarketplaceDisplayPrice(b) > 0;
+      if (aVerified && bVerified) {
+        return getMarketplaceDisplayPrice(a) - getMarketplaceDisplayPrice(b);
+      }
+      if (aVerified !== bVerified) return aVerified ? -1 : 1;
+
+      return (
+        (b.finalMatchScore ?? b.matchScore ?? 0) -
+        (a.finalMatchScore ?? a.matchScore ?? 0)
+      );
+    });
+  }, [recalculatedResults]);
 
   const visibleResults = useMemo(() => {
     return dedupedResults.filter((item) => {
@@ -361,7 +378,9 @@ export default function AnalyzePage() {
   }, [dedupedResults, countryFilter, marketplaceFilter]);
 
   const comparisonData =
-    visibleResults.map((r) => ({
+    visibleResults
+      .filter((r) => r.searchMethod !== "not_found")
+      .map((r) => ({
       id: r.id,
       country: r.country,
       marketplace: r.marketplace,
@@ -386,10 +405,26 @@ export default function AnalyzePage() {
       originalPrice: r.originalPrice,
     })) ?? [];
 
+  const cheapestVerifiedId = useMemo(() => {
+    const verified = visibleResults.filter(
+      (item) =>
+        item.searchMethod !== "not_found" &&
+        !item.isMockPrice &&
+        getMarketplaceDisplayPrice(item) > 0
+    );
+    if (verified.length === 0) return null;
+    return verified.reduce((best, item) =>
+      getMarketplaceDisplayPrice(item) < getMarketplaceDisplayPrice(best)
+        ? item
+        : best
+    ).id;
+  }, [visibleResults]);
+
   const bestResult = useMemo(() => {
     const selected = visibleResults[selectedProfitIndex] ?? visibleResults[0];
     if (
       selected &&
+      selected.searchMethod !== "not_found" &&
       !selected.isMockPrice &&
       getMarketplaceDisplayPrice(selected) > 0
     ) {
@@ -397,7 +432,10 @@ export default function AnalyzePage() {
     }
     return (
       visibleResults.find(
-        (r) => !r.isMockPrice && getMarketplaceDisplayPrice(r) > 0
+        (r) =>
+          r.searchMethod !== "not_found" &&
+          !r.isMockPrice &&
+          getMarketplaceDisplayPrice(r) > 0
       ) ?? selected
     );
   }, [visibleResults, selectedProfitIndex]);
@@ -415,9 +453,7 @@ export default function AnalyzePage() {
     result?.marketplaceResults[0]?.currency ??
     "TRY";
 
-  const renderResultCard = (    r: AnalysisResult["marketplaceResults"][number],
-    index: number
-  ) => (
+  const renderResultCard = (r: AnalysisResult["marketplaceResults"][number]) => (
     <MarketplaceResultCard
       key={r.id}
       result={{
@@ -426,10 +462,7 @@ export default function AnalyzePage() {
       }}
       kaspiImageUrl={result?.product.imageUrl}
       kaspiTitle={result?.product.title}
-      isBest={
-        index === 0 &&
-        (r.isTopMatch ?? (r.imageSimilarityScore ?? 0) >= 60)
-      }
+      isBest={r.id === cheapestVerifiedId}
       onSave={() => handleSaveAnalysis(r.id)}
       onResultUpdate={handleResultUpdate}
       saving={savingAnalysis}
@@ -575,7 +608,7 @@ export default function AnalyzePage() {
                   маркетплейс.
                 </p>
               ) : (
-                visibleResults.map((r, i) => renderResultCard(r, i))
+                visibleResults.map((r) => renderResultCard(r))
               )}
             </TabsContent>
 

@@ -3,6 +3,14 @@ import {
   extractPriceFromHtml,
 } from "./htmlPriceExtractor";
 import { getCurrencyForMarketplace } from "../marketplaces/marketplaceCurrency";
+import { parseTurkishDomPrice, normalizeTurkishLiraPrice } from "./turkishPrice";
+import {
+  extractHepsiburadaSalePrice,
+  extractN11SalePrice,
+  extractSepetePriceFromText,
+  extractTrendyolMainProductPriceFromState,
+  extractTrendyolSalePrice,
+} from "./turkishSepetePrice";
 
 const PLAYWRIGHT_MARKETPLACES = new Set([
   "hepsiburada",
@@ -25,7 +33,8 @@ export function isBlockedOrEmptyHtml(html: string): boolean {
   if (
     html.includes("displayPriceFloat") ||
     html.includes("displayPriceNumber") ||
-    (html.includes("n11.com") && html.includes('"groupId"'))
+    (html.includes("n11.com") && html.includes('"groupId"')) ||
+    (html.includes("trendyol") && html.includes("sellingPrice"))
   ) {
     return false;
   }
@@ -81,9 +90,17 @@ export async function parseProductWithPlaywright(
         get: () => undefined,
       });
     });
+    if (marketplace === "trendyol") {
+      await context.addCookies([
+        { name: "storefrontId", value: "1", domain: ".trendyol.com", path: "/" },
+        { name: "countryCode", value: "TR", domain: ".trendyol.com", path: "/" },
+        { name: "language", value: "tr", domain: ".trendyol.com", path: "/" },
+        { name: "culture", value: "tr-TR", domain: ".trendyol.com", path: "/" },
+      ]);
+    }
     const page = await context.newPage();
 
-    await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
 
     if (marketplace === "hepsiburada") {
       try {
@@ -105,6 +122,17 @@ export async function parseProductWithPlaywright(
             document.querySelector(".newPrice ins, .newPrice, [itemprop='price']") !=
               null,
           { timeout: 12000 }
+        );
+      } catch {
+        // may still be in initial HTML
+      }
+    } else if (marketplace === "trendyol") {
+      try {
+        await page.waitForFunction(
+          () =>
+            document.querySelector(".prc-box-dscntd, .prc-box-sllng") != null ||
+            document.body?.innerHTML.includes("sellingPrice"),
+          { timeout: 15000 }
         );
       } catch {
         // may still be in initial HTML
@@ -144,12 +172,111 @@ export async function parseProductWithPlaywright(
 
     await page.waitForTimeout(1500);
 
+    if (marketplace === "trendyol") {
+      const trendyolMain = await page.evaluate(() => {
+        const w = window as unknown as Record<string, unknown>;
+        const state =
+          w.__PRODUCT_DETAIL_APP_INITIAL_STATE__ ??
+          w.PRODUCT_DETAIL_APP_INITIAL_STATE__;
+        if (state) return { kind: "state" as const, state };
+
+        const otherHeader = [...document.querySelectorAll("h2,h3,div,span")].find(
+          (el) => /Ürünün\s+Diğer\s+Satıcıları/i.test(el.textContent?.trim() ?? "")
+        );
+        for (const el of document.querySelectorAll(".prc-box-dscntd")) {
+          if (
+            otherHeader &&
+            (otherHeader.compareDocumentPosition(el) &
+              Node.DOCUMENT_POSITION_FOLLOWING) !==
+              0
+          ) {
+            continue;
+          }
+          const text = el.textContent?.trim();
+          if (text) return { kind: "dom" as const, text };
+        }
+        return null;
+      });
+
+      if (trendyolMain?.kind === "state") {
+        const statePrice = extractTrendyolMainProductPriceFromState(
+          trendyolMain.state
+        );
+        if (statePrice != null && statePrice > 0) {
+          const title =
+            (await page.evaluate(() =>
+              document.querySelector("h1")?.textContent?.trim()
+            )) ?? "Unknown product";
+          const imageUrl = await page.evaluate(() => {
+            const og = document.querySelector('meta[property="og:image"]');
+            return og?.getAttribute("content") ?? undefined;
+          });
+          return {
+            title,
+            price: statePrice,
+            currency: getCurrencyForMarketplace(marketplace),
+            imageUrl,
+          };
+        }
+      }
+
+      if (trendyolMain?.kind === "dom" && trendyolMain.text) {
+        const domPrice = parseTurkishDomPrice(trendyolMain.text);
+        if (domPrice != null && domPrice > 0) {
+          const title =
+            (await page.evaluate(() =>
+              document.querySelector("h1")?.textContent?.trim()
+            )) ?? "Unknown product";
+          const imageUrl = await page.evaluate(() => {
+            const og = document.querySelector('meta[property="og:image"]');
+            return og?.getAttribute("content") ?? undefined;
+          });
+          return {
+            title,
+            price: domPrice,
+            currency: getCurrencyForMarketplace(marketplace),
+            imageUrl,
+          };
+        }
+      }
+    }
+
     const html = await page.content();
     if (isBlockedOrEmptyHtml(html)) {
       console.warn(
         `[price-verification] Playwright blocked for ${marketplace}: ${url}`
       );
       return null;
+    }
+
+    const salePrice =
+      marketplace === "hepsiburada"
+        ? extractHepsiburadaSalePrice(html)
+        : marketplace === "trendyol"
+          ? extractTrendyolSalePrice(html)
+          : marketplace === "n11"
+            ? extractN11SalePrice(html)
+            : null;
+
+    if (salePrice != null) {
+      const pageText = await page.evaluate(() => document.body?.innerText ?? "");
+      const title =
+        (await page.evaluate(() =>
+          document.querySelector("h1")?.textContent?.trim()
+        )) ?? "Unknown product";
+      const fromText =
+        marketplace === "n11" ? extractSepetePriceFromText(pageText) : null;
+      const price = fromText ?? salePrice;
+      const imageUrl = await page.evaluate(() => {
+        const og = document.querySelector('meta[property="og:image"]');
+        return og?.getAttribute("content") ?? undefined;
+      });
+      return {
+        title,
+        price,
+        currency: getCurrencyForMarketplace(marketplace),
+        imageUrl,
+      };
     }
 
     const fromHtml = extractPriceFromHtml(html, url, marketplace);
@@ -164,19 +291,11 @@ export async function parseProductWithPlaywright(
       const scripts = Array.from(document.querySelectorAll("script"));
       for (const script of scripts) {
         const text = script.textContent ?? "";
-        if (text.includes("displayPriceFloat") || text.includes("displayPriceNumber")) {
-          const floatMatch = text.match(/"displayPriceFloat"\s*:\s*(\d+)/);
-          const numberMatch = text.match(/"displayPriceNumber"\s*:\s*(\d+)/);
-          const price = Number(floatMatch?.[1] ?? numberMatch?.[1]);
-          if (Number.isFinite(price) && price > 0) {
-            return { title, price };
-          }
-        }
         if (!text.includes("productState")) continue;
-        const entries = [];
+        const entries: Array<{ value: number; discountRate: number }> = [];
         const re =
           /"value"\s*:\s*([\d.]+)\s*,\s*"currency"\s*:\s*\d+\s*,\s*"discountRate"\s*:\s*(\d+)/g;
-        let m;
+        let m: RegExpExecArray | null;
         while ((m = re.exec(text)) !== null) {
           const value = Number(m[1]);
           const discountRate = Number(m[2]);
@@ -193,18 +312,23 @@ export async function parseProductWithPlaywright(
           const brand = brandMatch?.[1] ?? "";
           const fullTitle =
             brand && name ? `${brand} ${name}` : name || brand || title;
-          return { title: fullTitle, price };
+          return { title: fullTitle, price, priceText: "" };
         }
       }
 
-      const priceSelectors = [
-        '[data-test-id="price-current-price"]',
-        '.newPrice ins',
-        '.newPrice',
-        '[itemprop="price"]',
-        "#offering-price",
-        '[class*="PriceBox"] [class*="price"]',
-      ];
+      const priceSelectors =
+        marketplace === "trendyol"
+          ? []
+          : marketplace === "hepsiburada"
+            ? [
+                '[aria-label*="Sepete ekle, fiyat"]',
+                '[data-test-id="price-current-price"]',
+              ]
+            : [
+                ".newPrice ins",
+                ".newPrice",
+                '[itemprop="price"]',
+              ];
 
       for (const selector of priceSelectors) {
         const el = document.querySelector(selector);
@@ -214,17 +338,17 @@ export async function parseProductWithPlaywright(
           el.getAttribute("data-price") ??
           el.textContent ??
           "";
-        const normalized = raw.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
-        const price = parseFloat(normalized.replace(/[^\d.]/g, ""));
-        if (Number.isFinite(price) && price > 0) {
-          return { title, price };
-        }
+        return { title, price: 0, priceText: raw };
       }
 
-      return { title, price: 0 };
+      return { title, price: 0, priceText: "" };
     });
 
-    if (dom.price > 0) {
+    const domPrice =
+      dom.price > 0
+        ? normalizeTurkishLiraPrice(dom.price)
+        : parseTurkishDomPrice(dom.priceText);
+    if (domPrice != null && domPrice > 0) {
       const imageUrl = await page.evaluate(() => {
         const og = document.querySelector('meta[property="og:image"]');
         return og?.getAttribute("content") ?? undefined;
@@ -232,7 +356,7 @@ export async function parseProductWithPlaywright(
 
       return {
         title: dom.title || "Unknown product",
-        price: dom.price,
+        price: domPrice,
         currency: getCurrencyForMarketplace(marketplace),
         imageUrl,
       };
@@ -249,11 +373,16 @@ export function shouldUsePlaywrightFallback(
   html: string | null,
   extracted: ReturnType<typeof extractPriceFromHtml>
 ): boolean {
-  if (extracted) return false;
   if (!PLAYWRIGHT_MARKETPLACES.has(marketplace)) return false;
-  // n11 часто отдаёт 403 на fetch — нужен Playwright
-  if (marketplace === "n11") return true;
-  // Playwright is often blocked (403) while server fetch already has productState JSON.
+  // TR: fetch часто отдаёт неполный HTML или цену без скидки — всегда уточняем в браузере
+  if (
+    marketplace === "n11" ||
+    marketplace === "hepsiburada" ||
+    marketplace === "trendyol"
+  ) {
+    return true;
+  }
+  if (extracted) return false;
   if (html && !isBlockedOrEmptyHtml(html)) return false;
   return true;
 }

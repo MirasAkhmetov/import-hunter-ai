@@ -6,6 +6,20 @@ const USER_AGENT =
 
 const DEFAULT_CITY_ID = "750000000";
 
+const INVALID_KASPI_TITLE_PATTERNS = [
+  /страница не найдена/i,
+  /page not found/i,
+  /ошибка 404/i,
+  /^404\b/i,
+];
+
+export function isInvalidKaspiProductPage(title: string, price: number): boolean {
+  const normalized = title.trim();
+  if (!normalized) return true;
+  if (price <= 0) return true;
+  return INVALID_KASPI_TITLE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 interface KaspiBackendItem {
   card?: {
     id?: string;
@@ -99,6 +113,24 @@ function parseLdJsonPrice(html: string): number | undefined {
 function parseOgImage(html: string): string | undefined {
   const match = html.match(/property="og:image"\s+content="([^"]+)"/);
   return match?.[1];
+}
+
+export function ensureAbsoluteKaspiImageUrl(
+  url: string | undefined
+): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("//")) {
+    return `https:${trimmed}`;
+  }
+  if (trimmed.startsWith("/")) {
+    return `https://kaspi.kz${trimmed}`;
+  }
+  return trimmed;
 }
 
 function specsFromBackend(item: KaspiBackendItem): Record<string, string> | undefined {
@@ -318,16 +350,17 @@ export async function fetchKaspiProductFromHtml(url: string): Promise<ParsedProd
     parseLdJsonPrice(html) ??
     0;
 
-  if (!price) {
+  if (isInvalidKaspiProductPage(title, price)) {
     throw new Error("PRODUCT_NOT_FOUND");
   }
 
-  const imageUrl =
+  const imageUrl = ensureAbsoluteKaspiImageUrl(
     backendItem?.galleryImages?.[0]?.large ??
-    backendItem?.galleryImages?.[0]?.medium ??
-    digitalProduct?.primaryImage?.large ??
-    digitalProduct?.primaryImage?.medium ??
-    parseOgImage(html);
+      backendItem?.galleryImages?.[0]?.medium ??
+      digitalProduct?.primaryImage?.large ??
+      digitalProduct?.primaryImage?.medium ??
+      parseOgImage(html)
+  );
 
   const brand =
     digitalProduct?.brand ?? backendItem?.card?.promoConditions?.brand;

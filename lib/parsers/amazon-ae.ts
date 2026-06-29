@@ -34,7 +34,7 @@ export const amazonAeProvider: MarketplaceProvider = {
   country: "AE",
   currency: "AED",
   baseUrl: "https://www.amazon.ae",
-  enabled: true,
+  enabled: process.env.MOCK_MODE !== "false",
   search: searchAmazonAe,
   parseProduct: parseAmazonAeProduct,
 };

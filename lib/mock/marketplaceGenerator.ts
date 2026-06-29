@@ -558,7 +558,7 @@ export function generateMockMarketplaceResults(
 
       currency,
 
-      url: `${buildMarketplaceSearchUrl(marketplace, query)}&mock=${index}`,
+      url: buildMarketplaceSearchUrl(marketplace, query),
 
       imageUrl,
 

@@ -9,15 +9,14 @@ function buildSettings(
   base: AppSettings,
   overrides?: Partial<AppSettings>
 ): AppSettings {
+  const merged = mergeSearchSettings({
+    mockBrandContactsEnabled:
+      overrides?.mockBrandContactsEnabled ?? base.mockBrandContactsEnabled,
+  });
   return {
     ...base,
+    ...merged,
     ...overrides,
-    ...mergeSearchSettings({
-      searchApiProvider: overrides?.searchApiProvider ?? base.searchApiProvider,
-      searchApiKey: overrides?.searchApiKey ?? base.searchApiKey,
-      mockBrandContactsEnabled:
-        overrides?.mockBrandContactsEnabled ?? base.mockBrandContactsEnabled,
-    }),
   };
 }
 

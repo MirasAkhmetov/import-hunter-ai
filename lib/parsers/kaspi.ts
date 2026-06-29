@@ -1,10 +1,13 @@
 import type { ParsedProduct } from "../types";
 import { isValidKaspiUrl } from "../utils";
 import { getMockKaspiProduct } from "../mock/data";
-import { fetchKaspiProductFromHtml } from "./kaspiHtmlParser";
+import {
+  ensureAbsoluteKaspiImageUrl,
+  fetchKaspiProductFromHtml,
+  isInvalidKaspiProductPage,
+} from "./kaspiHtmlParser";
 import { parseKaspiUrl } from "../mock/kaspiUrlParser";
-
-const MOCK_MODE = process.env.MOCK_MODE !== "false";
+import { isMockMode } from "../config/mockMode";
 
 function enrichFromUrl(url: string, product: ParsedProduct): ParsedProduct {
   const parsed = parseKaspiUrl(url);
@@ -31,7 +34,10 @@ export async function parseKaspiProduct(url: string): Promise<ParsedProduct> {
   // Сначала пробуем получить реальные данные с Kaspi (цена, фото, отзывы)
   try {
     const product = await fetchKaspiProductFromHtml(url);
-    return enrichFromUrl(url, product);
+    return enrichFromUrl(url, {
+      ...product,
+      imageUrl: ensureAbsoluteKaspiImageUrl(product.imageUrl),
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "INVALID_KASPI_URL") {
       throw error;
@@ -39,12 +45,12 @@ export async function parseKaspiProduct(url: string): Promise<ParsedProduct> {
     console.warn("Kaspi HTML fetch failed, using fallback:", error);
   }
 
-  if (MOCK_MODE) {
+  if (isMockMode()) {
     await delay(400);
     return getMockKaspiProduct(url);
   }
 
-  // Playwright fallback для production без mock
+  // Playwright fallback for production without mock
   try {
     const { chromium } = await import("playwright");
     const browser = await chromium.launch({ headless: true });
@@ -83,20 +89,20 @@ export async function parseKaspiProduct(url: string): Promise<ParsedProduct> {
 
     await browser.close();
 
-    if (!product.title) {
+    if (isInvalidKaspiProductPage(product.title, product.price)) {
       throw new Error("PRODUCT_NOT_FOUND");
     }
 
-    return {
+    return enrichFromUrl(url, {
       source: "kaspi",
       title: product.title,
       price: product.price,
       currency: "KZT",
       url,
-      imageUrl: product.imageUrl,
+      imageUrl: ensureAbsoluteKaspiImageUrl(product.imageUrl),
       rating: product.rating,
       reviewCount: product.reviewCount,
-    };
+    });
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "PRODUCT_NOT_FOUND" || error.message === "INVALID_KASPI_URL") {

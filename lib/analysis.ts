@@ -8,10 +8,9 @@ import {
 import {
   matchProducts,
   generateRecommendation,
-  buildSearchQuery,
-  runHybridSearch,
 } from "./aiMatcher";
-import { filterAndRankMatches } from "./matching/productMatcher";
+import { runProductSearchOrchestrator } from "./search/searchOrchestrator";
+import type { MarketplaceSearchFn } from "./search/types";
 import { calculateProfit } from "./profitCalculator";
 import { getSettings } from "./settings";
 import { mockStore, nextMockId } from "./store/mockStore";
@@ -25,9 +24,11 @@ import { enrichResultWithProductPage } from "./price-verification/productPagePar
 import type {
   AnalysisStatus,
   MarketplaceResultData,
+  ParsedProduct,
   ProfitAnalysisResult,
 } from "./types";
 import { ANALYSIS_STATUS_LABELS } from "./types";
+import { getMarketplaceDisplayPrice } from "./analysis-history/resolveBestResult";
 import type { BrandContact, BrandFinderMeta } from "./types/brandFinder";
 import type {
   AnalysisResult,
@@ -50,10 +51,165 @@ const ERROR_MESSAGES: Record<string, string> = {
   PARSING_BLOCKED: "Парсинг заблокирован. Попробуйте позже или включите mock-режим.",
   NO_MATCHES: "Похожие товары не найдены",
   AI_API_ERROR: "Ошибка AI API. Проверьте ключ OpenAI.",
+  ANALYSIS_TIMEOUT:
+    "Анализ занял слишком много времени. Попробуйте снова или сузьте фильтр по стране/маркетплейсу.",
+  ENRICHMENT_TIMEOUT:
+    "Не удалось быстро проверить цену на маркетплейсе. Попробуйте ещё раз.",
+  UNKNOWN_ERROR:
+    "Произошла неизвестная ошибка. Попробуйте другую ссылку или повторите позже.",
 };
 
+function normalizeErrorCode(code: string): string {
+  if (code in ERROR_MESSAGES) return code;
+
+  const lower = code.toLowerCase();
+  if (
+    lower.includes("timeout") ||
+    lower.includes("timed out") ||
+    lower.includes("headers timeout")
+  ) {
+    return "ANALYSIS_TIMEOUT";
+  }
+  if (
+    lower.includes("playwright") ||
+    lower.includes("browser") ||
+    lower.includes("net::err")
+  ) {
+    return "PARSING_BLOCKED";
+  }
+  if (lower.includes("not implemented")) {
+    return "MARKETPLACE_UNAVAILABLE";
+  }
+  if (lower.includes("enrichment_timeout")) {
+    return "ENRICHMENT_TIMEOUT";
+  }
+
+  return code;
+}
+
 export function getErrorMessage(code: string): string {
-  return ERROR_MESSAGES[code] ?? "Произошла неизвестная ошибка";
+  const normalized = normalizeErrorCode(code);
+  return ERROR_MESSAGES[normalized] ?? ERROR_MESSAGES.UNKNOWN_ERROR;
+}
+
+const ENRICHMENT_TIMEOUT_MS = 22_000;
+
+async function enrichResultWithTimeout(
+  result: MarketplaceResultData
+): Promise<MarketplaceResultData> {
+  try {
+    return await Promise.race([
+      enrichResultWithProductPage(result),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("ENRICHMENT_TIMEOUT")), ENRICHMENT_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    const searchPrice = result.price ?? 0;
+    if (searchPrice > 0) {
+      return {
+        ...result,
+        originalPrice: searchPrice,
+        finalPrice: searchPrice,
+        price: searchPrice,
+        isMockPrice: false,
+        needsProfitReview: true,
+        priceSource: "search_result",
+      };
+    }
+    return {
+      ...result,
+      isMockPrice: true,
+      needsProfitReview: true,
+      priceSource: "search_result",
+    };
+  }
+}
+
+function buildVerifiedMarketplaceResult(
+  enriched: MarketplaceResultData,
+  kaspiProduct: ParsedProduct,
+  settings: Awaited<ReturnType<typeof getSettings>>
+): MarketplaceResultData & {
+  profit?: ProfitAnalysisResult;
+  needsProfitReview?: boolean;
+} {
+  const matchScore = enriched.finalMatchScore ?? enriched.matchScore ?? 0;
+  const linkVerification = verifyProductLink({
+    kaspiProduct,
+    resultTitle: enriched.title,
+    resultUrl: enriched.url,
+    matchScore,
+  });
+
+  const priceInfo = getEffectivePurchasePrice({
+    originalPrice: enriched.price,
+    correctedPrice: enriched.correctedPrice,
+    priceSource: enriched.priceSource ?? "search_result",
+    isMockPrice: enriched.isMockPrice,
+  });
+
+  const originalPrice = enriched.originalPrice ?? enriched.price;
+  const finalPrice = priceInfo.finalPrice;
+  const autoProfit = canAutoCalculateProfit(
+    matchScore,
+    linkVerification.linkStatus,
+    priceInfo.isMockPrice
+  );
+
+  const baseFields = {
+    ...enriched,
+    originalPrice,
+    finalPrice,
+    price: finalPrice,
+    priceSource: priceInfo.priceSource,
+    linkStatus: linkVerification.linkStatus,
+    priceVerifiedAt: new Date().toISOString(),
+    isMockPrice: priceInfo.isMockPrice,
+    matchWarnings: [
+      ...(enriched.matchWarnings ?? []),
+      ...linkVerification.warnings,
+    ],
+    needsProfitReview: !autoProfit,
+  };
+
+  const profit = calculateProfit({
+    kaspiPriceKzt: kaspiProduct.price,
+    purchasePrice: finalPrice,
+    purchaseCurrency: enriched.currency,
+    country: enriched.country,
+    settings,
+    kaspiCategory: kaspiProduct.category,
+    kaspiProductTitle: kaspiProduct.title,
+  });
+
+  return {
+    ...baseFields,
+    profit,
+    needsProfitReview: autoProfit ? baseFields.needsProfitReview : true,
+  };
+}
+
+function pickCheapestVerifiedResult(
+  results: MarketplaceResultData[]
+): MarketplaceResultData | undefined {
+  const verified = results.filter(
+    (item) =>
+      item.searchMethod !== "not_found" &&
+      !item.isMockPrice &&
+      getMarketplaceDisplayPrice(item) > 0
+  );
+  if (verified.length === 0) return undefined;
+
+  return [...verified].sort((a, b) => {
+    const priceDiff =
+      getMarketplaceDisplayPrice(a) - getMarketplaceDisplayPrice(b);
+    if (priceDiff !== 0) return priceDiff;
+    return (
+      (b.finalMatchScore ?? b.matchScore ?? 0) -
+      (a.finalMatchScore ?? a.matchScore ?? 0)
+    );
+  })[0];
 }
 
 export async function runAnalysis(
@@ -96,39 +252,43 @@ export async function runAnalysis(
     }
   };
 
-  const searchAll = async (query: ReturnType<typeof buildSearchQuery>) => {
-    const { results, providerStatuses: statuses } = await searchMarketplaces(
-      query,
-      {
-        countries: options?.countries,
-        marketplaces: options?.marketplaces,
-        onProgress: (provider) => {
-          report("searching_marketplaces", provider.name);
-        },
-      }
-    );
+  const searchForMarketplaces: MarketplaceSearchFn = async (query, marketplaces) => {
+    const { results, providerStatuses: statuses } = await searchMarketplaces(query, {
+      countries: options?.countries,
+      marketplaces,
+      onProgress: (provider) => {
+        report("searching_marketplaces", provider.name);
+      },
+    });
     mergeProviderStatuses(statuses);
     return results;
   };
 
-  const { results: allResults, visualDescription } = await runHybridSearch(
+  const orchestrated = await runProductSearchOrchestrator(
     kaspiProduct,
-    searchAll
+    searchForMarketplaces,
+    async (candidates, visualDescription) => {
+      if (candidates.length === 0) return [];
+      return matchProducts(kaspiProduct, candidates, visualDescription);
+    },
+    {
+      countries: options?.countries,
+      marketplaces: options?.marketplaces,
+      onMarketplaceProgress: (_marketplace, phase) => {
+        if (phase === "image" || phase === "text") {
+          report("searching_marketplaces");
+        }
+      },
+    }
   );
 
-  if (allResults.length === 0) {
-    throw new Error("NO_MATCHES");
-  }
-
-  report("matching_products");
-  const matchedResults = filterAndRankMatches(
-    await matchProducts(kaspiProduct, allResults, visualDescription),
-    70
-  );
+  const { results: matchedResults } = orchestrated;
 
   if (matchedResults.length === 0) {
     throw new Error("NO_MATCHES");
   }
+
+  report("matching_products");
 
   report("calculating_profit");
 
@@ -136,76 +296,36 @@ export async function runAnalysis(
     MarketplaceResultData & { profit?: ProfitAnalysisResult; needsProfitReview?: boolean }
   > = [];
 
-  for (const result of matchedResults) {
-    const enriched = await enrichResultWithProductPage(result);
+  const notFoundResults = matchedResults.filter((r) => r.searchMethod === "not_found");
+  const enrichableResults = matchedResults.filter((r) => r.searchMethod !== "not_found");
 
-    const matchScore = enriched.finalMatchScore ?? enriched.matchScore ?? 0;
-    const linkVerification = verifyProductLink({
-      kaspiProduct: kaspiProduct,
-      resultTitle: enriched.title,
-      resultUrl: enriched.url,
-      matchScore,
+  for (const result of notFoundResults) {
+    verifiedResults.push({
+      ...result,
+      isMockPrice: true,
+      needsProfitReview: true,
+      priceSource: "search_result",
+      linkStatus: "needs_review",
+      profit: calculateProfit({
+        kaspiPriceKzt: kaspiProduct.price,
+        purchasePrice: 0,
+        purchaseCurrency: result.currency,
+        country: result.country,
+        settings,
+        kaspiCategory: kaspiProduct.category,
+        kaspiProductTitle: kaspiProduct.title,
+      }),
     });
+  }
 
-    const priceInfo = getEffectivePurchasePrice({
-      originalPrice: enriched.price,
-      correctedPrice: enriched.correctedPrice,
-      priceSource: enriched.priceSource ?? "search_result",
-      isMockPrice: enriched.isMockPrice,
-    });
+  const enrichedBatch = await Promise.all(
+    enrichableResults.map((result) => enrichResultWithTimeout(result))
+  );
 
-    const originalPrice = enriched.originalPrice ?? enriched.price;
-    const finalPrice = priceInfo.finalPrice;
-    const autoProfit = canAutoCalculateProfit(
-      matchScore,
-      linkVerification.linkStatus,
-      priceInfo.isMockPrice
+  for (const enriched of enrichedBatch) {
+    verifiedResults.push(
+      buildVerifiedMarketplaceResult(enriched, kaspiProduct, settings)
     );
-
-    const baseFields = {
-      ...enriched,
-      originalPrice,
-      finalPrice,
-      price: finalPrice,
-      priceSource: priceInfo.priceSource,
-      linkStatus: linkVerification.linkStatus,
-      priceVerifiedAt: new Date().toISOString(),
-      isMockPrice: priceInfo.isMockPrice,
-      matchWarnings: [
-        ...(enriched.matchWarnings ?? []),
-        ...linkVerification.warnings,
-      ],
-      needsProfitReview: !autoProfit,
-    };
-
-    if (autoProfit) {
-      verifiedResults.push({
-        ...baseFields,
-        profit: calculateProfit({
-          kaspiPriceKzt: kaspiProduct.price,
-          purchasePrice: finalPrice,
-          purchaseCurrency: enriched.currency,
-          country: enriched.country,
-          settings,
-          kaspiCategory: kaspiProduct.category,
-          kaspiProductTitle: kaspiProduct.title,
-        }),
-      });
-    } else {
-      verifiedResults.push({
-        ...baseFields,
-        profit: calculateProfit({
-          kaspiPriceKzt: kaspiProduct.price,
-          purchasePrice: finalPrice,
-          purchaseCurrency: enriched.currency,
-          country: enriched.country,
-          settings,
-          kaspiCategory: kaspiProduct.category,
-          kaspiProductTitle: kaspiProduct.title,
-        }),
-        needsProfitReview: true,
-      });
-    }
   }
 
   const resultsWithProfit = verifiedResults.sort((a, b) => {
@@ -335,7 +455,10 @@ export async function runAnalysis(
     }
   }
 
-  const best = resultsWithProfit[0];
+  const foundResults = resultsWithProfit.filter(
+    (item) => item.searchMethod !== "not_found"
+  );
+  const best = pickCheapestVerifiedResult(foundResults) ?? resultsWithProfit[0];
 
   const productId = savedProduct?.id ?? "mock-" + Date.now();
 

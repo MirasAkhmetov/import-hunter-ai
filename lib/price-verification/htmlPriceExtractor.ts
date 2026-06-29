@@ -9,6 +9,13 @@ const BROWSER_HEADERS = {
 export { BROWSER_HEADERS };
 
 import { parseLocalizedPrice } from "../parseLocalizedPrice";
+import { normalizeTurkishLiraPrice } from "./turkishPrice";
+import {
+  extractHepsiburadaSalePrice,
+  extractN11SalePrice,
+  extractTrendyolSalePrice,
+  isCouponPriceContext,
+} from "./turkishSepetePrice";
 import { MARKETPLACE_CURRENCY } from "../marketplaces/marketplaceCurrency";
 export { parseLocalizedPrice };
 
@@ -79,35 +86,8 @@ function collectMetaPrices(html: string, list: PriceCandidate[]) {
   if (itemprop) addCandidate(list, itemprop[1], "itemprop-price", 85);
 }
 
-/** Pick sale/discounted price from Hepsiburada productState.prices[] */
 export function parseHepsiburadaSalePrice(html: string): number | null {
-  if (!html.includes("productState")) return null;
-
-  const pricesBlock = html.match(
-    /"productState"[\s\S]*?"prices"\s*:\s*(\[[\s\S]*?\])/
-  );
-  const scope = pricesBlock?.[1] ?? html;
-
-  const entries: Array<{ value: number; discountRate: number }> = [];
-  const entryPattern =
-    /"value"\s*:\s*([\d.]+)\s*,\s*"currency"\s*:\s*\d+\s*,\s*"discountRate"\s*:\s*(\d+)/g;
-
-  for (const match of scope.matchAll(entryPattern)) {
-    const value = Number(match[1]);
-    const discountRate = Number(match[2]);
-    if (Number.isFinite(value) && value > 0) {
-      entries.push({ value, discountRate });
-    }
-  }
-
-  if (entries.length === 0) return null;
-
-  const discounted = entries.filter((e) => e.discountRate > 0);
-  if (discounted.length > 0) {
-    return Math.min(...discounted.map((e) => e.value));
-  }
-
-  return Math.min(...entries.map((e) => e.value));
+  return extractHepsiburadaSalePrice(html);
 }
 
 /** Hepsiburada 2025/2026 SPA embeds price in productState.product.prices[].value */
@@ -157,56 +137,53 @@ export function extractN11EmbeddedState(html: string): {
     return null;
   }
 
-  const candidates: number[] = [];
-
-  const newPriceIns = html.match(
-    /class="newPrice"[\s\S]{0,300}?<ins[^>]*>\s*([\d.]+)\s*TL/i
-  );
-  if (newPriceIns) {
-    const p = parseLocalizedPrice(newPriceIns[1]);
-    if (p != null && p > 0) candidates.push(p);
-  }
-
-  for (const match of html.matchAll(/"displayPrice"\s*:\s*"([\d.]+)\s*TL"/gi)) {
-    const p = parseLocalizedPrice(match[1]);
-    if (p != null && p > 0) candidates.push(p);
-  }
-
-  for (const match of html.matchAll(/"displayPriceFloat"\s*:\s*(\d+)/g)) {
-    const n = Number(match[1]);
-    if (n > 0) candidates.push(n);
-  }
-  for (const match of html.matchAll(/"displayPriceNumber"\s*:\s*(\d+)/g)) {
-    const n = Number(match[1]);
-    if (n > 0) candidates.push(n);
-  }
-
-  const itemprop = html.match(/itemprop="price"\s+content="([\d.]+)"/i);
-  if (itemprop) {
-    const p = parseLocalizedPrice(itemprop[1]);
-    if (p != null && p > 0) candidates.push(p);
-  }
-
-  const meaningful = candidates.filter((n) => n >= 10);
-  if (meaningful.length === 0) return null;
-
-  const price = Math.min(...meaningful);
-
   const titleMatch =
     html.match(/property="og:title"\s+content="([^"]+)"/i) ??
     html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
   const title =
     titleMatch?.[1]?.trim().replace(/\s+/g, " ") ?? "Unknown product";
-
   const imageMatch =
     html.match(/property="og:image"\s+content="([^"]+)"/i) ??
     html.match(/<meta[^>]+name="twitter:image"[^>]+content="([^"]+)"/i);
 
-  return {
-    title,
-    price,
-    imageUrl: imageMatch?.[1],
-  };
+  const salePrice = extractN11SalePrice(html);
+  if (salePrice != null) {
+    return { title, price: salePrice, imageUrl: imageMatch?.[1] };
+  }
+
+  const displayFloat = html.match(/"displayPriceFloat"\s*:\s*([\d.]+)/i);
+  if (displayFloat) {
+    const price = normalizeTurkishLiraPrice(Number(displayFloat[1]));
+    if (price > 0) {
+      return { title, price, imageUrl: imageMatch?.[1] };
+    }
+  }
+
+  return null;
+}
+
+/** Trendyol: discountedPrice / sellingPrice в JSON страницы товара */
+export function extractTrendyolEmbeddedState(html: string): {
+  title: string;
+  price: number;
+  imageUrl?: string;
+} | null {
+  if (!html.includes("trendyol") && !html.includes("sellingPrice")) {
+    return null;
+  }
+
+  const salePrice = extractTrendyolSalePrice(html);
+  if (salePrice != null) {
+    const titleMatch =
+      html.match(/property="og:title"\s+content="([^"]+)"/i) ??
+      html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    const title =
+      titleMatch?.[1]?.trim().replace(/\s+/g, " ") ?? "Unknown product";
+    const imageMatch = html.match(/property="og:image"\s+content="([^"]+)"/i);
+    return { title, price: salePrice, imageUrl: imageMatch?.[1] };
+  }
+
+  return null;
 }
 
 function collectMarketplacePrices(
@@ -239,13 +216,17 @@ function collectMarketplacePrices(
 
   if (host.includes("trendyol") || html.includes("trendyol.com")) {
     const tyPatterns: Array<[RegExp, number]> = [
-      [/"discountedPrice"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)/gi, 88],
-      [/"sellingPrice"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)/gi, 87],
-      [/"price"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)/gi, 86],
-      [/"salePrice"\s*:\s*([\d.]+)/gi, 85],
+      [/"discountedPrice"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)/gi, 92],
+      [/"discountedPrice"\s*:\s*([\d.]+)/gi, 91],
+      [/class="prc-box-dscntd"[^>]*>([^<]+)</gi, 90],
+      [/"sellingPrice"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)/gi, 70],
+      [/"sellingPrice"\s*:\s*([\d.]+)/gi, 69],
     ];
     for (const [pattern, priority] of tyPatterns) {
       for (const match of html.matchAll(pattern)) {
+        const start = match.index ?? 0;
+        const context = html.slice(Math.max(0, start - 100), start + 140);
+        if (priority < 80 && isCouponPriceContext(context)) continue;
         addCandidate(list, match[1], `trendyol`, priority);
       }
     }
@@ -284,10 +265,12 @@ function collectMarketplacePrices(
 
   if (host.includes("n11") || html.includes("n11.com")) {
     const n11Patterns: Array<[RegExp, number]> = [
-      [/class="newPrice"[\s\S]{0,200}?<ins[^>]*>\s*([\d.]+)\s*TL/gi, 98],
-      [/"displayPrice"\s*:\s*"([\d.]+)\s*TL"/gi, 96],
-      [/"displayPriceFloat"\s*:\s*(\d+)/gi, 94],
-      [/"displayPriceNumber"\s*:\s*(\d+)/gi, 93],
+      [/class="newPrice"[\s\S]{0,200}?<ins[^>]*>\s*([\d.,]+)\s*TL/gi, 98],
+      [/"instantDiscountPrice"\s*:\s*([\d.]+)/gi, 97],
+      [/"finalPrice"\s*:\s*([\d.]+)/gi, 96],
+      [/"displayPrice"\s*:\s*"([\d.,]+)\s*TL"/gi, 94],
+      [/"displayPriceFloat"\s*:\s*(\d+)/gi, 88],
+      [/"displayPriceNumber"\s*:\s*(\d+)/gi, 87],
       [/itemprop="price"\s+content="([\d.]+)"/gi, 90],
     ];
     for (const [pattern, priority] of n11Patterns) {
@@ -329,7 +312,11 @@ function pickBestPrice(candidates: PriceCandidate[]): number | null {
   if (meaningful.length > 0) {
     const topPriority = meaningful.reduce((max, c) => Math.max(max, c.priority), 0);
     const topTier = meaningful.filter((c) => c.priority === topPriority);
-    // Закупка — минимальная цена в лучшем tier (цена со скидкой, не зачёркнутая)
+    const trendyolTier = topTier.every((c) => c.source === "trendyol");
+    // Trendyol: в tier не берём min — купон ниже скидочной цены
+    if (trendyolTier && topTier.length > 1) {
+      return Math.max(...topTier.map((c) => c.price));
+    }
     return Math.min(...topTier.map((c) => c.price));
   }
 
@@ -373,6 +360,18 @@ export function extractPriceFromHtml(
 
   if (host.includes("hepsiburada") || html.includes("hepsiburada.com")) {
     const embedded = extractHepsiburadaEmbeddedState(html);
+    if (embedded) {
+      return {
+        title: embedded.title,
+        price: embedded.price,
+        currency: "TRY",
+        imageUrl: embedded.imageUrl,
+      };
+    }
+  }
+
+  if (host.includes("trendyol") || html.includes("trendyol.com")) {
+    const embedded = extractTrendyolEmbeddedState(html);
     if (embedded) {
       return {
         title: embedded.title,

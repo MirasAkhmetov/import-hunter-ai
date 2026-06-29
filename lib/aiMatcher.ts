@@ -243,7 +243,9 @@ function generateRecommendationMock(
     }
   >
 ): string {
-  const sorted = [...results].sort((a, b) => {
+  const sorted = [...results]
+    .filter((item) => item.searchMethod !== "not_found")
+    .sort((a, b) => {
     const topDiff = Number(b.isTopMatch) - Number(a.isTopMatch);
     if (topDiff !== 0) return topDiff;
     const exactDiff = Number(b.isExactMatch) - Number(a.isExactMatch);

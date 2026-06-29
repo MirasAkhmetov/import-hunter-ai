@@ -34,7 +34,7 @@ export const noonProvider: MarketplaceProvider = {
   country: "AE",
   currency: "AED",
   baseUrl: "https://www.noon.com",
-  enabled: true,
+  enabled: process.env.MOCK_MODE !== "false",
   search: searchNoon,
   parseProduct: parseNoonProduct,
 };

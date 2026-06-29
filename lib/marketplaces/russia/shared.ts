@@ -9,8 +9,7 @@ import type {
   ProductSearchQuery,
 } from "../../types";
 import { getMockMarketplaceResults } from "../../mock/data";
-
-const MOCK_MODE = process.env.MOCK_MODE !== "false";
+import { isMockMode } from "../../config/mockMode";
 
 export interface RussiaProviderConfig {
   name: string;
@@ -74,7 +73,7 @@ export function createRussiaProvider(
     const searchQueries = buildSearchQueries(query);
     const collected: MarketplaceResultData[] = [];
 
-    if (MOCK_MODE) {
+    if (isMockMode()) {
       await delay(mockDelay);
       for (const searchTerm of searchQueries) {
         const results = getMockMarketplaceResults(
@@ -105,7 +104,7 @@ export function createRussiaProvider(
   }
 
   async function parseProduct(url: string): Promise<ParsedProduct> {
-    if (MOCK_MODE) {
+    if (isMockMode()) {
       const results = getMockMarketplaceResults(marketplace, "RU", { title: "" });
       const item = results[0];
       return {

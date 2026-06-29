@@ -5,8 +5,7 @@ import {
 } from "./provider";
 import type { MarketplaceResultData, ParsedProduct, ProductSearchQuery } from "../types";
 import { getMockMarketplaceResults } from "../mock/data";
-
-const MOCK_MODE = process.env.MOCK_MODE !== "false";
+import { isMockMode } from "../config/mockMode";
 
 export const INDIA_MARKETPLACES = ["flipkart", "amazon-in", "meesho"];
 
@@ -40,12 +39,12 @@ function createIndiaProvider(config: {
     country: "IN",
     currency: "INR",
     baseUrl,
-    enabled: true,
+    enabled: isMockMode(),
     async search(query: ProductSearchQuery): Promise<MarketplaceResultData[]> {
       const searchQueries = buildSearchQueries(query);
       const collected: MarketplaceResultData[] = [];
 
-      if (MOCK_MODE) {
+      if (isMockMode()) {
         await delay(500);
         for (const sq of searchQueries) {
           const results = getMockMarketplaceResults(
@@ -61,7 +60,7 @@ function createIndiaProvider(config: {
       throw new Error(`${name} provider not implemented yet`);
     },
     async parseProduct(url: string): Promise<ParsedProduct> {
-      if (MOCK_MODE) {
+      if (isMockMode()) {
         const results = getMockMarketplaceResults(marketplace, "IN", { title: "" });
         const item = results[0];
         return {

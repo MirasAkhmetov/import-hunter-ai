@@ -7,6 +7,8 @@ import {
   getErrorMessage,
 } from "@/lib/analysis";
 
+export const maxDuration = 300;
+
 const schema = z.object({
   url: z.string().url().refine(
     (url) => url.includes("kaspi.kz") && url.includes("/shop/p/"),
@@ -37,16 +39,20 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({ success: true, data: result });
     } catch (error) {
-      const message =
+      const rawMessage =
         error instanceof Error ? error.message : "UNKNOWN_ERROR";
 
       await updateAnalysisJob(job.id, {
         status: "failed",
-        error: getErrorMessage(message),
+        error: getErrorMessage(rawMessage),
       });
 
       return NextResponse.json(
-        { success: false, error: getErrorMessage(message), code: message },
+        {
+          success: false,
+          error: getErrorMessage(rawMessage),
+          code: rawMessage,
+        },
         { status: 400 }
       );
     }

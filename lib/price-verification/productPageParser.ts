@@ -81,7 +81,10 @@ export async function parseProduct(
     let extracted = html ? extractPriceFromHtml(html, url, marketplace) : null;
 
     if (shouldUsePlaywrightFallback(marketplace, html, extracted)) {
-      extracted = await parseProductWithPlaywright(url, marketplace);
+      const fromBrowser = await parseProductWithPlaywright(url, marketplace);
+      if (fromBrowser) {
+        extracted = fromBrowser;
+      }
     }
 
     if (!extracted) {
@@ -132,10 +135,23 @@ export async function enrichResultWithProductPage(
 
   const parsed = await parseProduct(result.url, result.marketplace);
   if (!parsed) {
+    const searchPrice = result.price ?? 0;
+    if (searchPrice > 0) {
+      return {
+        ...result,
+        originalPrice: searchPrice,
+        finalPrice: searchPrice,
+        price: searchPrice,
+        isMockPrice: false,
+        needsProfitReview: true,
+        priceSource: "search_result",
+      };
+    }
     return {
       ...result,
       isMockPrice: true,
       needsProfitReview: true,
+      priceSource: "search_result",
     };
   }
 

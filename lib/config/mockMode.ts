@@ -1,3 +1,3 @@
 export function isMockMode(): boolean {
-  return process.env.MOCK_MODE !== "false";
+  return process.env.MOCK_MODE === "true";
 }

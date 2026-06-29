@@ -7,7 +7,7 @@ const SEARCH_URL_PATTERNS = [
   /[?&]k=/i,
   /[?&]query=/i,
   /\/s\?/i,
-  /mock=\d/i,
+  /search\.aspx/i,
 ];
 
 export function isMarketplaceSearchUrl(url: string): boolean {
@@ -17,13 +17,19 @@ export function isMarketplaceSearchUrl(url: string): boolean {
     const full = parsed.href;
 
     // Страница товара Hepsiburada: ...-p-HBC12345 или ...-pm-HBC12345
-    if (/[\-/](p|pm)\-[a-z0-9]+$/i.test(path)) return false;
+    if (/[\-/](p|pm)\-hbc\d+$/i.test(path)) return false;
+    // Trendyol product: ...-p-12345678
+    if (/-p-\d+$/i.test(path)) return false;
     // Wildberries product: /catalog/{nmId}/detail.aspx
     if (/\/catalog\/\d+\/detail\.aspx/i.test(path)) return false;
     // Ozon product: /product/slug-id/
     if (/\/product\/[^/]+-\d+/i.test(path)) return false;
-    // n11 product: /urun/slug-id
+    // n11 / PttAVM product: /urun/slug-id
     if (/\/urun\//i.test(path)) return false;
+    // Amazon product: /dp/ or /gp/product/
+    if (/\/dp\//i.test(path) || /\/gp\/product\//i.test(path)) return false;
+    // Flipkart product: /p/itm...
+    if (/\/p\/itm/i.test(path)) return false;
     if (path.includes("/product/") || path.includes("/p/")) return false;
 
     return SEARCH_URL_PATTERNS.some((pattern) => pattern.test(full));

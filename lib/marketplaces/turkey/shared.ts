@@ -9,8 +9,7 @@ import type {
   ProductSearchQuery,
 } from "../../types";
 import { getMockMarketplaceResults } from "../../mock/data";
-
-const MOCK_MODE = process.env.MOCK_MODE !== "false";
+import { isMockMode } from "../../config/mockMode";
 
 export interface TurkeyProviderConfig {
   name: string;
@@ -31,6 +30,56 @@ function queryWithSearchTerm(
   return { ...query, title: searchTerm };
 }
 
+type TurkeySearchMarketplace = "hepsiburada" | "trendyol" | "n11";
+
+async function realSearch(
+  marketplace: TurkeySearchMarketplace,
+  searchTerm: string
+): Promise<MarketplaceResultData[]> {
+  if (marketplace === "hepsiburada") {
+    const { searchHepsiburada } = await import("../../parsers/turkeySearch");
+    return searchHepsiburada(searchTerm);
+  }
+
+  if (marketplace === "trendyol") {
+    const { searchTrendyol } = await import("../../parsers/turkeySearch");
+    return searchTrendyol(searchTerm);
+  }
+
+  const { searchN11 } = await import("../../parsers/turkeySearch");
+  return searchN11(searchTerm);
+}
+
+async function realParseProduct(
+  marketplace: string,
+  url: string
+): Promise<ParsedProduct> {
+  const { parseProduct } = await import("../../price-verification/productPageParser");
+  const parsed = await parseProduct(url, marketplace);
+  if (!parsed || parsed.price <= 0) {
+    throw new Error("PRODUCT_NOT_FOUND");
+  }
+
+  return {
+    source: marketplace,
+    title: parsed.title,
+    price: parsed.price,
+    currency: parsed.currency,
+    url: parsed.url,
+    imageUrl: parsed.imageUrl,
+  };
+}
+
+function isTurkeySearchMarketplace(
+  marketplace: string
+): marketplace is TurkeySearchMarketplace {
+  return (
+    marketplace === "hepsiburada" ||
+    marketplace === "trendyol" ||
+    marketplace === "n11"
+  );
+}
+
 export function createTurkeyProvider(
   config: TurkeyProviderConfig
 ): MarketplaceProvider {
@@ -42,13 +91,16 @@ export function createTurkeyProvider(
     enabled = true,
   } = config;
 
+  const providerEnabled =
+    enabled && (isMockMode() || isTurkeySearchMarketplace(marketplace));
+
   async function search(
     query: ProductSearchQuery
   ): Promise<MarketplaceResultData[]> {
     const searchQueries = buildSearchQueries(query);
     const collected: MarketplaceResultData[] = [];
 
-    if (MOCK_MODE) {
+    if (isMockMode()) {
       await delay(mockDelay);
       for (const searchTerm of searchQueries) {
         const results = getMockMarketplaceResults(
@@ -61,11 +113,29 @@ export function createTurkeyProvider(
       return deduplicateMarketplaceResults(collected);
     }
 
-    throw new Error("MARKETPLACE_UNAVAILABLE");
+    if (!isTurkeySearchMarketplace(marketplace)) {
+      throw new Error("MARKETPLACE_UNAVAILABLE");
+    }
+
+    for (const searchTerm of searchQueries) {
+      try {
+        const results = await realSearch(marketplace, searchTerm);
+        collected.push(...results);
+      } catch (error) {
+        console.warn(`[${marketplace}] search failed for "${searchTerm}":`, error);
+      }
+    }
+
+    const deduped = deduplicateMarketplaceResults(collected);
+    if (deduped.length === 0) {
+      throw new Error("MARKETPLACE_UNAVAILABLE");
+    }
+
+    return deduped;
   }
 
   async function parseProduct(url: string): Promise<ParsedProduct> {
-    if (MOCK_MODE) {
+    if (isMockMode()) {
       const results = getMockMarketplaceResults(marketplace, "TR", { title: "" });
       const item = results[0];
       return {
@@ -77,7 +147,8 @@ export function createTurkeyProvider(
         imageUrl: item.imageUrl,
       };
     }
-    throw new Error("MARKETPLACE_UNAVAILABLE");
+
+    return realParseProduct(marketplace, url);
   }
 
   return {
@@ -86,7 +157,7 @@ export function createTurkeyProvider(
     country: "TR",
     currency: "TRY",
     baseUrl,
-    enabled,
+    enabled: providerEnabled,
     search,
     parseProduct,
   };

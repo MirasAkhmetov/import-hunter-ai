@@ -66,6 +66,7 @@ interface MarketplaceResultCardProps {
     linkStatus?: LinkStatus;
     isMockPrice?: boolean;
     needsProfitReview?: boolean;
+    searchMethod?: "image" | "text" | "not_found";
   };
   kaspiImageUrl?: string | null;
   kaspiTitle?: string;
@@ -92,6 +93,7 @@ export function MarketplaceResultCard({
   const [linkError, setLinkError] = useState<string | null>(null);
 
   const displayScore = result.finalMatchScore ?? result.matchScore ?? 0;
+  const isNotFound = result.searchMethod === "not_found";
   const browseUrl = normalizeMarketplaceUrl(result.url);
   const isSearchLink = isMarketplaceSearchUrl(result.url);
   const imageScore =
@@ -141,8 +143,40 @@ export function MarketplaceResultCard({
   };
 
   return (
-    <Card className={isBest ? "border-blue-300 ring-2 ring-blue-100" : ""}>
+    <Card
+      className={
+        isBest
+          ? "border-blue-300 ring-2 ring-blue-100"
+          : isNotFound
+            ? "border-amber-200 bg-amber-50/40"
+            : ""
+      }
+    >
       <CardContent className="space-y-4 p-4">
+        {isNotFound ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="secondary">
+                {COUNTRY_LABELS[result.country] ?? result.country}
+              </Badge>
+              <Badge variant="outline">
+                {MARKETPLACE_LABELS[result.marketplace] ?? result.marketplace}
+              </Badge>
+              <Badge variant="warning">Не найдено</Badge>
+            </div>
+            <p className="text-sm font-medium text-amber-900">{result.title}</p>
+            {result.matchWarnings?.[0] && (
+              <p className="text-sm text-amber-800">{result.matchWarnings[0]}</p>
+            )}
+            <Button variant="default" size="sm" asChild>
+              <a href={browseUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-3 w-3" />
+                Искать на маркетплейсе
+              </a>
+            </Button>
+          </div>
+        ) : (
+        <>
         <div className="flex gap-4">
           <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-100">
             {result.imageUrl ? (
@@ -179,7 +213,13 @@ export function MarketplaceResultCard({
                   {result.isTopMatch === false && imageScore > 0 && imageScore < 60 && (
                     <Badge variant="warning">Фото не подтверждено</Badge>
                   )}
-                  {isBest && <Badge variant="success">Лучший вариант</Badge>}
+                  {result.searchMethod === "image" && (
+                    <Badge variant="outline">По фото</Badge>
+                  )}
+                  {result.searchMethod === "text" && (
+                    <Badge variant="outline">По названию</Badge>
+                  )}
+                  {isBest && <Badge variant="success">Самый дешёвый</Badge>}
                 </div>
                 <h4 className="mt-1.5 line-clamp-2 text-sm font-medium">{result.title}</h4>
               </div>
@@ -265,7 +305,7 @@ export function MarketplaceResultCard({
               <div className="flex min-w-0 flex-1 gap-2">
                 <Input
                   type="url"
-                  placeholder="Ссылка на страницу товара (не поиск)"
+                  placeholder="Ссылка на страницу товара"
                   value={manualLink}
                   onChange={(e) => setManualLink(e.target.value)}
                   className="h-8 text-xs"
@@ -283,8 +323,16 @@ export function MarketplaceResultCard({
             </div>
             {isSearchLink && (
               <p className="text-xs text-slate-500">
-                Кнопка выше откроет поиск. Для цены вставьте ссылку на конкретный товар
-                (…-p-HBC… или …-pm-HBC…) и нажмите «Применить».
+                Кнопка откроет поиск по бренду. Для подтверждения цены вставьте ссылку
+                на конкретный товар (…-p-HBC…, /dp/, /catalog/…/detail.aspx) и нажмите
+                «Применить».
+              </p>
+            )}
+            {!priceVerified && (result.finalPrice ?? result.price) > 0 && (
+              <p className="text-xs text-amber-700">
+                Ориентировочная цена:{" "}
+                {(result.finalPrice ?? result.price).toLocaleString("ru-RU")}{" "}
+                {getCurrencySymbol(result.currency)} — подтвердите ссылкой на товар
               </p>
             )}
             {linkError && <p className="text-xs text-red-600">{linkError}</p>}
@@ -319,8 +367,11 @@ export function MarketplaceResultCard({
             matchWarnings={result.matchWarnings}
           />
         )}
+        </>
+        )}
       </CardContent>
 
+      {!isNotFound && (
       <ManualPriceCorrectionModal
         open={correctionOpen}
         onOpenChange={setCorrectionOpen}
@@ -340,6 +391,7 @@ export function MarketplaceResultCard({
           });
         }}
       />
+      )}
     </Card>
   );
 }

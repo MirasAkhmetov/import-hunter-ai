@@ -58,6 +58,8 @@ export interface MatchDetails {
   priceScore?: number;
 }
 
+export type MarketplaceSearchMethod = "image" | "text" | "not_found";
+
 export interface MarketplaceResultData extends PriceVerificationFields {
   marketplace: string;
   country: string;
@@ -66,6 +68,7 @@ export interface MarketplaceResultData extends PriceVerificationFields {
   currency: string;
   url: string;
   imageUrl?: string;
+  searchMethod?: MarketplaceSearchMethod;
   sellerName?: string;
   sellerRating?: number;
   specifications?: Record<string, string>;
