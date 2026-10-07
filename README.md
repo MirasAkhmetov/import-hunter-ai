@@ -29,7 +29,8 @@ AI-ассистент по поиску прибыльных товаров дл
 ### 1. Клонирование и зависимости
 
 ```bash
-cd "AI Parser"
+git clone https://github.com/MirasAkhmetov/import-hunter-ai.git
+cd import-hunter-ai
 npm install
 ```
 
@@ -38,7 +39,7 @@ npm install
 Скопируйте `.env.example` в `.env`:
 
 ```bash
-copy .env.example .env
+cp .env.example .env
 ```
 
 Настройте переменные:
@@ -64,7 +65,7 @@ npx prisma generate
 npm run dev
 ```
 
-Откройте [http://localhost:3000](http://localhost:3000)
+Откройте [http://localhost:3010](http://localhost:3010)
 
 ## OpenAI API Key
 
@@ -87,7 +88,7 @@ MOCK_MODE="false"
 
 ## Mock-режим
 
-По умолчанию `MOCK_MODE=true`. Система возвращает демо-данные (Apple AirPods Pro 2) с аналогами на всех маркетплейсах.
+Включается через `MOCK_MODE=true` (по умолчанию выключен). Система возвращает демо-данные (Apple AirPods Pro 2) с аналогами на всех маркетплейсах.
 
 Для реального парсинга:
 
