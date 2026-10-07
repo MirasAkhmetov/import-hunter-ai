@@ -399,7 +399,7 @@ export async function searchTrendyol(
     }
 
     const cards = await page.evaluate(() =>
-      [...document.querySelectorAll('a[data-testid="product-card"]')].map((card) => ({
+      [...document.querySelectorAll<HTMLElement>('a[data-testid="product-card"]')].map((card) => ({
         href: card.getAttribute("href"),
         alt: card.querySelector("img[data-testid='image-img'], img")?.getAttribute("alt"),
         text: card.innerText,
@@ -440,7 +440,7 @@ export async function searchN11(query: string): Promise<MarketplaceResultData[]>
     await page.waitForTimeout(12000);
 
     const cards = await page.evaluate(() =>
-      [...document.querySelectorAll("a.product-item[href*='/urun/']")].map((card) => ({
+      [...document.querySelectorAll<HTMLElement>("a.product-item[href*='/urun/']")].map((card) => ({
         href: card.getAttribute("href"),
         text: card.innerText,
         priceText:
