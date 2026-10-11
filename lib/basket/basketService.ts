@@ -1,6 +1,6 @@
 import { prisma } from "../db";
 import { isDbAvailable } from "../db/availability";
-import { mockStore } from "../store/mockStore";
+import { localStore } from "../store/localStore";
 import {
   calculateBasketSummary,
   calculateBasketItemTotals,
@@ -11,7 +11,7 @@ export { calculateBasketItemTotals, calculateBasketSummary } from "./basketCalcu
 
 export async function getBasket() {
   if (!(await isDbAvailable())) {
-    const items = mockStore.basket.getAll().map((i) => ({
+    const items = localStore.basket.getAll().map((i) => ({
       id: i.id,
       productId: i.productId,
       marketplaceResultId: i.marketplaceResultId,
@@ -80,14 +80,14 @@ export async function getBasket() {
       ),
     };
   } catch {
-    const items = mockStore.basket.getAll();
+    const items = localStore.basket.getAll();
     return { items, summary: calculateBasketSummary(items) };
   }
 }
 
 export async function addToBasket(input: BasketItemInput) {
   if (!(await isDbAvailable())) {
-    return mockStore.basket.add(input);
+    return localStore.basket.add(input);
   }
 
   try {
@@ -116,7 +116,7 @@ export async function addToBasket(input: BasketItemInput) {
       },
     });
   } catch {
-    return mockStore.basket.add(input);
+    return localStore.basket.add(input);
   }
 }
 
@@ -125,7 +125,7 @@ export async function updateBasketItem(
   data: Partial<BasketItemInput & { quantity: number }>
 ) {
   if (!(await isDbAvailable())) {
-    return mockStore.basket.update(id, data);
+    return localStore.basket.update(id, data);
   }
 
   try {
@@ -140,19 +140,19 @@ export async function updateBasketItem(
       },
     });
   } catch {
-    return mockStore.basket.update(id, data);
+    return localStore.basket.update(id, data);
   }
 }
 
 export async function removeFromBasket(id: string) {
   if (!(await isDbAvailable())) {
-    return mockStore.basket.remove(id);
+    return localStore.basket.remove(id);
   }
 
   try {
     await prisma.purchaseBasketItem.delete({ where: { id } });
     return true;
   } catch {
-    return mockStore.basket.remove(id);
+    return localStore.basket.remove(id);
   }
 }

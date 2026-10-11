@@ -3,7 +3,6 @@ import { z } from "zod";
 import {
   saveAnalysisRun,
   listAnalysisRuns,
-  seedMockAnalysisHistory,
 } from "@/lib/analysis-history/analysisHistoryService";
 import { getSettings } from "@/lib/settings";
 import type { AnalysisHistoryFilters } from "@/lib/types/analysisHistory";
@@ -17,8 +16,6 @@ const saveSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  seedMockAnalysisHistory();
-
   const sp = request.nextUrl.searchParams;
   const filters: AnalysisHistoryFilters = {
     dateFrom: sp.get("dateFrom") ?? undefined,

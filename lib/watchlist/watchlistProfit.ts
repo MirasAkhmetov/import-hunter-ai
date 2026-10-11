@@ -1,5 +1,5 @@
 import { calculateProfit } from "../profitCalculator";
-import { convertToKzt, getExchangeRate } from "../currency";
+import { convertToKzt } from "../currency";
 import type { WatchlistItemData } from "../types/extended";
 import type { AppSettings } from "../types";
 import { DEFAULT_SETTINGS } from "../types";

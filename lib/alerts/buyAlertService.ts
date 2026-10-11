@@ -1,6 +1,6 @@
 import { prisma } from "../db";
 import { isDbAvailable } from "../db/availability";
-import { mockStore, seedMockStore } from "../store/mockStore";
+import { localStore } from "../store/localStore";
 import { mapWatchlistItem } from "../watchlist/mapper";
 import type {
   AlertNotificationData,
@@ -10,10 +10,9 @@ import type {
 } from "../types/extended";
 
 export async function getAlerts(status?: string) {
-  seedMockStore();
 
   if (!(await isDbAvailable())) {
-    const all = mockStore.alerts.getAll();
+    const all = localStore.alerts.getAll();
     return status ? all.filter((a) => a.status === status) : all;
   }
 
@@ -47,18 +46,17 @@ export async function getAlerts(status?: string) {
       country: a.marketplaceResult.country,
     }));
   } catch {
-    return mockStore.alerts.getAll();
+    return localStore.alerts.getAll();
   }
 }
 
 export async function getUnreadAlertCount() {
-  seedMockStore();
-  if (!(await isDbAvailable())) return mockStore.alerts.getUnreadCount();
+  if (!(await isDbAvailable())) return localStore.alerts.getUnreadCount();
 
   try {
     return await prisma.alertNotification.count({ where: { status: "unread" } });
   } catch {
-    return mockStore.alerts.getUnreadCount();
+    return localStore.alerts.getUnreadCount();
   }
 }
 
@@ -66,7 +64,7 @@ export async function createAlertNotification(
   data: Omit<AlertNotificationData, "id" | "createdAt" | "readAt">
 ) {
   if (!(await isDbAvailable())) {
-    return mockStore.alerts.add({
+    return localStore.alerts.add({
       ...data,
       createdAt: new Date().toISOString(),
       readAt: null,
@@ -92,7 +90,7 @@ export async function createAlertNotification(
     });
     return alert;
   } catch {
-    return mockStore.alerts.add({
+    return localStore.alerts.add({
       ...data,
       createdAt: new Date().toISOString(),
       readAt: null,
@@ -102,7 +100,7 @@ export async function createAlertNotification(
 
 export async function markAlertAsRead(id: string) {
   if (!(await isDbAvailable())) {
-    return mockStore.alerts.update(id, {
+    return localStore.alerts.update(id, {
       status: "read",
       readAt: new Date().toISOString(),
     });
@@ -114,7 +112,7 @@ export async function markAlertAsRead(id: string) {
       data: { status: "read", readAt: new Date() },
     });
   } catch {
-    return mockStore.alerts.update(id, {
+    return localStore.alerts.update(id, {
       status: "read",
       readAt: new Date().toISOString(),
     });
@@ -142,7 +140,7 @@ async function updateWatchlistAlertStatus(
   alertStatus: AlertStatus
 ) {
   if (!(await isDbAvailable())) {
-    return mockStore.watchlist.update(watchlistItemId, { alertStatus });
+    return localStore.watchlist.update(watchlistItemId, { alertStatus });
   }
 
   try {
@@ -151,12 +149,11 @@ async function updateWatchlistAlertStatus(
       data: { alertStatus },
     });
   } catch {
-    return mockStore.watchlist.update(watchlistItemId, { alertStatus });
+    return localStore.watchlist.update(watchlistItemId, { alertStatus });
   }
 }
 
 export async function checkBuyAlerts(): Promise<AlertNotificationData[]> {
-  seedMockStore();
   const { checkAllWatchlistPrices } = await import("../watchlist/priceWatchChecker");
   const items = await getWatchlistItemsForCheck();
   const results = await checkAllWatchlistPrices(items);
@@ -166,7 +163,7 @@ export async function checkBuyAlerts(): Promise<AlertNotificationData[]> {
 }
 
 async function getWatchlistItemsForCheck(): Promise<WatchlistItemData[]> {
-  if (!(await isDbAvailable())) return mockStore.watchlist.getAll();
+  if (!(await isDbAvailable())) return localStore.watchlist.getAll();
 
   try {
     const items = await prisma.watchlistItem.findMany({
@@ -175,6 +172,6 @@ async function getWatchlistItemsForCheck(): Promise<WatchlistItemData[]> {
     });
     return items.map(mapWatchlistItem);
   } catch {
-    return mockStore.watchlist.getAll();
+    return localStore.watchlist.getAll();
   }
 }

@@ -5,7 +5,7 @@ import type {
 } from "../types";
 import type { BrandContact, BrandFinderMeta } from "./brandFinder";
 
-export type ProviderStatus = "active" | "failed" | "mock" | "disabled";
+export type ProviderStatus = "active" | "failed" | "disabled";
 
 export interface ProviderStatusInfo {
   marketplace: string;

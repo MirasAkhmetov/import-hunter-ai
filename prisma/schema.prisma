@@ -131,7 +131,6 @@ model Settings {
   minRoiPercent          Float    @default(20)
   searchApiProvider      String?
   searchApiKey           String?
-  mockBrandContactsEnabled Boolean @default(false)
   updatedAt              DateTime @updatedAt
 }
 

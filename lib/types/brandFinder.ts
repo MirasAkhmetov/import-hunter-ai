@@ -38,8 +38,7 @@ export type BrandContactEvidenceType =
   | "trademark_registry"
   | "marketplace_store"
   | "search_result"
-  | "manual_entry"
-  | "mock_data";
+  | "manual_entry";
 
 export type OutreachEmailStatus =
   | "draft"
@@ -87,8 +86,6 @@ export interface BrandContact {
 }
 
 export interface BrandFinderMeta {
-  mockBrandContactsEnabled: boolean;
-  mockMode: boolean;
   message?: string;
 }
 
@@ -125,9 +122,7 @@ export interface CompanyProfile {
   updatedAt: string;
 }
 
-export interface SearchSettings {
-  mockBrandContactsEnabled: boolean;
-}
+
 
 export const BRAND_CONTACT_ROLE_LABELS: Record<BrandContactRole, string> = {
   brand_owner: "Правообладатель",
@@ -180,7 +175,6 @@ export const BRAND_CONTACT_EVIDENCE_LABELS: Record<
   trademark_registry: "Реестр товарных знаков",
   marketplace_store: "Магазин на маркетплейсе",
   manual_entry: "Добавлено вручную",
-  mock_data: "Mock-данные",
 };
 
 export const OUTREACH_EMAIL_STATUS_LABELS: Record<OutreachEmailStatus, string> = {
@@ -208,5 +202,4 @@ export const DEFAULT_COMPANY_PROFILE: Omit<CompanyProfile, "id" | "updatedAt"> =
 export const BRAND_FINDER_MESSAGES = {
   NO_REAL_CONTACTS:
     "Контакты не найдены. Требуется ручная проверка или добавление вручную.",
-  MOCK_BANNER: "MOCK DATA — НЕ ИСПОЛЬЗОВАТЬ ДЛЯ РЕАЛЬНОЙ РАБОТЫ",
 } as const;

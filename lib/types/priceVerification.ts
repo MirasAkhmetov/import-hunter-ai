@@ -41,4 +41,3 @@ export const LINK_STATUS_LABELS: Record<LinkStatus, string> = {
   unavailable: "Недоступно",
 };
 
-export const MOCK_PRICE_BANNER = "MOCK PRICE — не использовать для закупки";

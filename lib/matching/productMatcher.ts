@@ -1,4 +1,5 @@
 import type { MarketplaceResultData, ParsedProduct } from "../types";
+import { categoryMatchTerms } from "../marketplaces/marketplaceSearchQuery";
 
 export type { MatchDetails } from "../types";
 
@@ -23,6 +24,13 @@ const FINAL_SCORE_WEIGHTS = {
 } as const;
 
 const IMAGE_TOP_MATCH_THRESHOLD = 60;
+/** Аксессуары и запчасти «для …» / «совместимо с …» — не сам товар. */
+const ACCESSORY_PATTERN =
+  /\b(uyumlu|yedek\s*par[cç]a|aksesuar|pi[sş]irme\s*ka[gğ][iı]d|ka[gğ][iı]d[iı]|k[iı]l[iı]f|tel\s*[iı]zgara|teli|compatible|replacement|accessor(?:y|ies)|spare\s*part)|совместим|запчаст|аксессуар|чехол|для\s+(?:аэрогрил|фритюрниц)/i;
+const ACCESSORY_SCORE_CAP = 30;
+
+/** Потолок оценки, если категория известна, но у кандидата другая (фен вместо аэрогриля). */
+const CATEGORY_MISMATCH_SCORE_CAP = 40;
 const PHOTO_SIMILAR_THRESHOLD = 75;
 
 const SPEC_ALIASES: Record<string, string[]> = {
@@ -125,12 +133,13 @@ function categoryMatches(
   candidate?: MarketplaceResultData
 ): boolean {
   if (!sourceCategory || !candidate) return false;
-  const normalized = normalizeText(sourceCategory);
-  const title = normalizeText(candidate.title);
-  const specs = candidate.specifications
-    ? Object.values(candidate.specifications).map(normalizeText).join(" ")
-    : "";
-  return title.includes(normalized) || specs.includes(normalized);
+  const haystack = [
+    normalizeText(candidate.title),
+    ...Object.values(candidate.specifications ?? {}).map(normalizeText),
+  ].join(" ");
+  return categoryMatchTerms(sourceCategory)
+    .map(normalizeText)
+    .some((term) => term && haystack.includes(term));
 }
 
 function calculatePriceScore(
@@ -221,7 +230,13 @@ export function scoreProductMatch(
   const categoryMatch = categoryMatches(source.category, candidate);
   const priceScore = calculatePriceScore(source.price, candidate.price, candidate.currency);
 
-  const finalMatchScore = calculateFinalMatchScore({
+  // Категорию проверяем, только если для неё есть переводы (иначе сравнивать не с чем)
+  const categoryKnown = Boolean(
+    source.category && categoryMatchTerms(source.category).length > 1
+  );
+  const categoryMismatch = categoryKnown && !categoryMatch && !modelMatch;
+
+  const weightedScore = calculateFinalMatchScore({
     brandMatch,
     modelMatch,
     specsMatchPercent,
@@ -229,17 +244,31 @@ export function scoreProductMatch(
     categoryMatch,
     priceScore,
   });
+  const isAccessory =
+    ACCESSORY_PATTERN.test(candidate.title) && !ACCESSORY_PATTERN.test(source.title);
+
+  let finalMatchScore = weightedScore;
+  if (categoryMismatch) finalMatchScore = Math.min(finalMatchScore, CATEGORY_MISMATCH_SCORE_CAP);
+  if (isAccessory) finalMatchScore = Math.min(finalMatchScore, ACCESSORY_SCORE_CAP);
 
   const matchWarnings = generateMatchWarnings({
     brandMatch,
     modelMatch,
     imageSimilarityScore,
   });
+  if (categoryMismatch) {
+    matchWarnings.push("Категория товара не совпадает с исходной.");
+  }
+  if (isAccessory) {
+    matchWarnings.push("Похоже на аксессуар или запчасть, а не сам товар.");
+  }
 
   let riskScore = 35;
   if (!brandMatch) riskScore += 25;
   if (!modelMatch) riskScore += 20;
   if (specsMatchPercent < 50) riskScore += 15;
+  if (categoryMismatch) riskScore += 15;
+  if (isAccessory) riskScore += 25;
   if (imageSimilarityScore < IMAGE_TOP_MATCH_THRESHOLD) riskScore += 10;
   if (candidate.sellerRating && candidate.sellerRating < 3.5) riskScore += 20;
 

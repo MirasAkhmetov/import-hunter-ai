@@ -122,8 +122,6 @@ export function BrandContactsBlock({
     }
   };
 
-  const showMockBanner =
-    meta?.mockBrandContactsEnabled && meta?.mockMode;
   const emptyMessage =
     meta?.message ??
     (contacts.length === 0 ? BRAND_FINDER_MESSAGES.NO_REAL_CONTACTS : undefined);
@@ -155,13 +153,7 @@ export function BrandContactsBlock({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {showMockBanner && (
-          <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-800">
-            {BRAND_FINDER_MESSAGES.MOCK_BANNER}
-          </div>
-        )}
-
-        {!showMockBanner && contacts.length === 0 && emptyMessage && (
+        {contacts.length === 0 && emptyMessage && (
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
             <p>{emptyMessage}</p>
             <p className="mt-2 text-slate-600">

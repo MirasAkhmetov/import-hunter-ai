@@ -38,12 +38,10 @@ export function isMarketplaceSearchUrl(url: string): boolean {
   }
 }
 
-/** Убирает mock-параметры из URL (для открытия в браузере). */
+/** Нормализует URL маркетплейса (для открытия в браузере). */
 export function normalizeMarketplaceUrl(url: string): string {
   try {
-    const parsed = new URL(url);
-    parsed.searchParams.delete("mock");
-    return parsed.toString();
+    return new URL(url).toString();
   } catch {
     return url;
   }

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { isMockMode } from "@/lib/config/mockMode";
+import { isDbAvailable } from "@/lib/db/availability";
 
 export async function PATCH(request: NextRequest) {
-  if (isMockMode()) {
-    const { id, isSaved } = await request.json();
-    return NextResponse.json({ success: true, data: { id, isSaved } });
+  if (!(await isDbAvailable())) {
+    return NextResponse.json(
+      { success: false, error: "База данных недоступна — сохранение невозможно" },
+      { status: 503 }
+    );
   }
 
   try {

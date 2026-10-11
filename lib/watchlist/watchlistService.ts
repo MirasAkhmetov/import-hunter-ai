@@ -1,6 +1,6 @@
 import { prisma } from "../db";
 import { isDbAvailable } from "../db/availability";
-import { mockStore, seedMockStore } from "../store/mockStore";
+import { localStore } from "../store/localStore";
 import { mapWatchlistItem } from "./mapper";
 import type { WatchlistItemData } from "../types/extended";
 import { getAnalysisRun } from "../analysis-history/analysisHistoryService";
@@ -38,10 +38,9 @@ export interface AddWatchlistInput {
 }
 
 export async function getWatchlist() {
-  seedMockStore();
 
   if (!(await isDbAvailable())) {
-    return mockStore.watchlist.getAll();
+    return localStore.watchlist.getAll();
   }
 
   try {
@@ -51,13 +50,13 @@ export async function getWatchlist() {
     });
     return items.map(mapWatchlistItem);
   } catch {
-    return mockStore.watchlist.getAll();
+    return localStore.watchlist.getAll();
   }
 }
 
 export async function addToWatchlist(input: AddWatchlistInput) {
   if (!(await isDbAvailable())) {
-    return mockStore.watchlist.add({
+    return localStore.watchlist.add({
       productId: input.productId,
       marketplaceResultId: input.marketplaceResultId,
       title: input.title,
@@ -111,7 +110,7 @@ export async function addToWatchlist(input: AddWatchlistInput) {
     });
     return mapWatchlistItem(item);
   } catch {
-    return mockStore.watchlist.add({
+    return localStore.watchlist.add({
       ...input,
       minProfit: input.minProfit ?? 0,
       minRoi: input.minRoi ?? 20,
@@ -134,7 +133,7 @@ export async function updateWatchlistItem(
   data: Partial<AddWatchlistInput & { status: string; alertStatus: string }>
 ) {
   if (!(await isDbAvailable())) {
-    return mockStore.watchlist.update(id, data as Partial<WatchlistItemData>);
+    return localStore.watchlist.update(id, data as Partial<WatchlistItemData>);
   }
 
   try {
@@ -155,18 +154,18 @@ export async function updateWatchlistItem(
     });
     return mapWatchlistItem(item);
   } catch {
-    return mockStore.watchlist.update(id, data as Partial<WatchlistItemData>);
+    return localStore.watchlist.update(id, data as Partial<WatchlistItemData>);
   }
 }
 
 export async function removeFromWatchlist(id: string) {
-  if (!(await isDbAvailable())) return mockStore.watchlist.remove(id);
+  if (!(await isDbAvailable())) return localStore.watchlist.remove(id);
 
   try {
     await prisma.watchlistItem.delete({ where: { id } });
     return true;
   } catch {
-    return mockStore.watchlist.remove(id);
+    return localStore.watchlist.remove(id);
   }
 }
 

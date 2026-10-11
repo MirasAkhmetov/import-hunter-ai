@@ -1,12 +1,10 @@
-import { prisma } from "../db";
-import { isDbAvailable } from "../db/availability";
-import { getMockCountryBreakdownData } from "../mock/countryBreakdown";
+import { getAnalysisItems } from "../store/analysisItems";
 import { COUNTRY_LABELS, MARKETPLACE_LABELS } from "../types";
 import { MANUAL_STATUS_LABELS } from "../types/extended";
 import type { ExportRow, ManualStatus } from "../types/extended";
 
-function mapMockToExport(): ExportRow[] {
-  return getMockCountryBreakdownData().map((item) => ({
+async function mapAnalysisItemsToExport(): Promise<ExportRow[]> {
+  return (await getAnalysisItems()).map((item) => ({
     kaspiTitle: item.productTitle,
     country: COUNTRY_LABELS[item.country] ?? item.country,
     marketplace: MARKETPLACE_LABELS[item.marketplace] ?? item.marketplace,
@@ -14,61 +12,22 @@ function mapMockToExport(): ExportRow[] {
     purchasePrice: item.purchasePriceKzt,
     priceKzt: item.purchasePriceKzt,
     delivery: item.deliveryCostKzt,
-    totalCost: item.purchasePriceKzt + item.deliveryCostKzt,
-    kaspiSalePrice: 129990,
+    totalCost: item.totalCostKzt,
+    kaspiSalePrice: item.kaspiPriceKzt,
     netProfit: item.netProfitKzt,
-    marginPercent: (item.netProfitKzt / 129990) * 100,
+    marginPercent: item.marginPercent,
     roiPercent: item.roiPercent,
     matchScore: item.matchScore,
     riskScore: item.riskScore,
     manualStatus:
       MANUAL_STATUS_LABELS[item.manualStatus as ManualStatus] ??
       item.manualStatus,
-    url: `https://example.com/${item.marketplace}/${item.id}`,
+    url: item.url ?? "",
   }));
 }
 
 export async function getExportData(): Promise<ExportRow[]> {
-  if (!(await isDbAvailable())) {
-    return mapMockToExport();
-  }
-
-  try {
-    const results = await prisma.marketplaceResult.findMany({
-      include: {
-        product: true,
-        profitAnalyses: { orderBy: { createdAt: "desc" }, take: 1 },
-      },
-    });
-
-    return results
-      .filter((r) => r.profitAnalyses.length > 0)
-      .map((r) => {
-        const p = r.profitAnalyses[0];
-        return {
-          kaspiTitle: r.product.title,
-          country: COUNTRY_LABELS[r.country] ?? r.country,
-          marketplace: MARKETPLACE_LABELS[r.marketplace] ?? r.marketplace,
-          foundTitle: r.title,
-          purchasePrice: p.purchasePriceKzt,
-          priceKzt: p.purchasePriceKzt,
-          delivery: p.deliveryCostKzt,
-          totalCost: p.totalCostKzt,
-          kaspiSalePrice: p.kaspiPriceKzt,
-          netProfit: p.netProfitKzt,
-          marginPercent: p.marginPercent,
-          roiPercent: p.roiPercent,
-          matchScore: r.matchScore,
-          riskScore: r.riskScore,
-          manualStatus:
-            MANUAL_STATUS_LABELS[r.manualStatus as ManualStatus] ??
-            r.manualStatus,
-          url: r.url,
-        };
-      });
-  } catch {
-    return mapMockToExport();
-  }
+  return mapAnalysisItemsToExport();
 }
 
 const CSV_HEADERS = [

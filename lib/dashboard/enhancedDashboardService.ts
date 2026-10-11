@@ -3,12 +3,8 @@ import { getBasket } from "../basket/basketService";
 import { getWatchlist, getTriggeredBuyAlerts } from "../watchlist/watchlistService";
 import { getUnreadAlertCount } from "../alerts/buyAlertService";
 import { getBrandContactsStats } from "../brand-finder/brandContactService";
-import {
-  listAnalysisRuns,
-  seedMockAnalysisHistory,
-} from "../analysis-history/analysisHistoryService";
-import { getMockCountryBreakdownData } from "../mock/countryBreakdown";
-import { seedMockStore, mockStore } from "../store/mockStore";
+import { listAnalysisRuns } from "../analysis-history/analysisHistoryService";
+import { getAnalysisItems, getStoredAnalyses } from "../store/analysisItems";
 import { MARKETPLACE_LABELS } from "../types";
 import { isIsoInDay, formatLocalDateYmd } from "../dateRange";
 
@@ -87,11 +83,8 @@ function emptyDashboard() {
 
 export async function getEnhancedDashboardData(options: DashboardDateOptions = {}) {
   const filterDay = options.date ?? formatLocalDateYmd();
-  seedMockStore();
-  seedMockAnalysisHistory();
-
   try {
-    const allAnalyses = mockStore.analyses.getAll();
+    const allAnalyses = await getStoredAnalyses();
     const analyses = allAnalyses.filter((a) => isIsoInDay(a.analyzedAt, filterDay));
     const brandContactsStats = await getBrandContactsStats();
     const analysisRuns = (await listAnalysisRuns()).filter((run) =>
@@ -138,13 +131,16 @@ export async function getEnhancedDashboardData(options: DashboardDateOptions = {
       analysisHistoryRecent,
     };
 
+    const manualReviewCount = (await getAnalysisItems()).filter(
+      (i) => i.manualStatus === "review"
+    ).length;
+
     if (analyses.length === 0) {
-      const mockItems = getMockCountryBreakdownData();
       return {
         ...emptyDashboard(),
         ...baseExtras,
         filterDate: filterDay,
-        manualReviewCount: mockItems.filter((i) => i.manualStatus === "review").length,
+        manualReviewCount,
         brandContactsStats,
         analysisHistoryRecent,
       };
@@ -208,8 +204,6 @@ export async function getEnhancedDashboardData(options: DashboardDateOptions = {
     const bigPriceDiff = allResults.filter(
       (r) => r.profit.netProfitKzt > 5000
     ).length;
-    const mockItems = getMockCountryBreakdownData();
-    const manualReview = mockItems.filter((i) => i.manualStatus === "review");
 
     const bestByRoi = [...allResults]
       .sort((a, b) => b.profit.roiPercent - a.profit.roiPercent)
@@ -244,10 +238,10 @@ export async function getEnhancedDashboardData(options: DashboardDateOptions = {
         highRoi,
         lowRisk,
         bigPriceDiff,
-        manualCheck: manualReview.length,
+        manualCheck: manualReviewCount,
       },
       ...baseExtras,
-      manualReviewCount: manualReview.length,
+      manualReviewCount,
       bestByRoi,
       bestByProfit,
       brandContactsStats,

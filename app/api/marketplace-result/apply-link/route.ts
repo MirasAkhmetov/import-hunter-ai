@@ -10,7 +10,7 @@ import {
   isKaspiProductUrl,
   marketplacesMatch,
 } from "@/lib/marketplaces/marketplaceCurrency";
-import { mockStore } from "@/lib/store/mockStore";
+import { localStore } from "@/lib/store/localStore";
 import { isDbAvailable } from "@/lib/db/availability";
 import { prisma } from "@/lib/db";
 
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (!(await isDbAvailable())) {
-      mockStore.marketplaceResults.update(marketplaceResultId, updateData);
+      localStore.marketplaceResults.update(marketplaceResultId, updateData);
     } else {
       try {
         await prisma.marketplaceResult.update({
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
           },
         });
       } catch {
-        mockStore.marketplaceResults.update(marketplaceResultId, updateData);
+        localStore.marketplaceResults.update(marketplaceResultId, updateData);
       }
     }
 

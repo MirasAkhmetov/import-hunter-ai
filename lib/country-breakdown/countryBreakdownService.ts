@@ -1,7 +1,4 @@
-import { prisma } from "../db";
-import { isDbAvailable } from "../db/availability";
-import { seedMockStore } from "../store/mockStore";
-import { getMockCountryBreakdownData } from "../mock/countryBreakdown";
+import { getAnalysisItems, type AnalysisItem } from "../store/analysisItems";
 import type {
   CountryBreakdownStats,
   CountryBestItem,
@@ -12,61 +9,7 @@ import { COUNTRY_LABELS } from "../types";
 import { COUNTRY_MARKETPLACES } from "../types/extended";
 import { applyProductFilters } from "../filters/productFilters";
 
-interface RawItem {
-  id: string;
-  title: string;
-  marketplace: string;
-  country: string;
-  purchasePriceKzt: number;
-  deliveryCostKzt: number;
-  netProfitKzt: number;
-  roiPercent: number;
-  riskScore: number;
-  matchScore: number;
-  brand?: string | null;
-  category?: string | null;
-  manualStatus: string;
-  productTitle: string;
-}
-
-async function fetchRawItems(): Promise<RawItem[]> {
-  if (!(await isDbAvailable())) {
-    return getMockCountryBreakdownData();
-  }
-
-  try {
-    const results = await prisma.marketplaceResult.findMany({
-      include: {
-        product: true,
-        profitAnalyses: { orderBy: { createdAt: "desc" }, take: 1 },
-      },
-    });
-
-    return results
-      .filter((r) => r.profitAnalyses.length > 0)
-      .map((r) => {
-        const profit = r.profitAnalyses[0];
-        return {
-          id: r.id,
-          title: r.title,
-          marketplace: r.marketplace,
-          country: r.country,
-          purchasePriceKzt: profit.purchasePriceKzt,
-          deliveryCostKzt: profit.deliveryCostKzt,
-          netProfitKzt: profit.netProfitKzt,
-          roiPercent: profit.roiPercent,
-          riskScore: r.riskScore,
-          matchScore: r.matchScore,
-          brand: r.product.brand,
-          category: r.product.category,
-          manualStatus: r.manualStatus,
-          productTitle: r.product.title,
-        };
-      });
-  } catch {
-    return getMockCountryBreakdownData();
-  }
-}
+type RawItem = AnalysisItem;
 
 function buildCountryStats(country: string, items: RawItem[]): CountryBreakdownStats {
   const countryItems = items.filter((i) => i.country === country);
@@ -144,8 +87,7 @@ function buildCountryStats(country: string, items: RawItem[]): CountryBreakdownS
 }
 
 export async function getCountryBreakdown(filters?: ProductFilters) {
-  seedMockStore();
-  let items = await fetchRawItems();
+  let items = await getAnalysisItems();
 
   if (filters) {
     items = applyProductFilters(

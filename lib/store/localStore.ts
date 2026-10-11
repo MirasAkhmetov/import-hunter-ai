@@ -20,9 +20,9 @@ import type {
   AnalysisSnapshot,
 } from "../types/analysisHistory";
 import {
-  loadMockStoreFromDisk,
-  saveMockStoreToDisk,
-} from "./mockStorePersistence";
+  loadLocalStoreFromDisk,
+  saveLocalStoreToDisk,
+} from "./localStorePersistence";
 
 export interface StoredAnalysisResult {
   id: string;
@@ -43,7 +43,7 @@ export interface StoredAnalysis {
   marketplaceResults: StoredAnalysisResult[];
 }
 
-// In-memory store for mock mode when DB is unavailable
+// Локальное хранилище (память + файл .local-data/store.json), когда PostgreSQL недоступен
 const basketItems: Map<string, BasketItemInput & { id: string; createdAt: string }> = new Map();
 const watchlist: Map<string, WatchlistItemData> = new Map();
 const alerts: Map<string, AlertNotificationData> = new Map();
@@ -85,18 +85,18 @@ const analysisRuns: Map<
 
 let idCounter = 1;
 function genId(prefix: string) {
-  return `${prefix}-mock-${idCounter++}`;
+  return `${prefix}-local-${idCounter++}`;
 }
 
-/** Уникальный id для mock-сущностей (marketplace results, analyses и т.д.) */
-export function nextMockId(prefix: string) {
+/** Уникальный id для локальных сущностей (marketplace results, analyses и т.д.) */
+export function nextLocalId(prefix: string) {
   return genId(prefix);
 }
 
 let appSettingsOverrides: Partial<import("../types").AppSettings> = {};
 
-function persistMockStore() {
-  saveMockStoreToDisk({
+function persistLocalStore() {
+  saveLocalStoreToDisk({
     appSettingsOverrides,
     analysisRuns: Array.from(analysisRuns.values()).map((entry) => ({
       run: entry.run as unknown as Record<string, unknown>,
@@ -112,12 +112,28 @@ function persistMockStore() {
       Record<string, unknown>
     >,
     alerts: Array.from(alerts.values()) as unknown as Array<Record<string, unknown>>,
+    basket: Array.from(basketItems.values()) as unknown as Array<Record<string, unknown>>,
+    priceHistory: Object.fromEntries(priceHistory) as unknown as Record<
+      string,
+      Array<Record<string, unknown>>
+    >,
+    manualStatuses: Object.fromEntries(manualStatuses),
+    favorites: Array.from(favorites),
+    notes: Object.fromEntries(notes),
+    brandContacts: Array.from(brandContacts.values()).map((c) => ({
+      ...c,
+      evidence: brandContactEvidence.get(c.id) ?? [],
+    })) as unknown as Array<Record<string, unknown>>,
+    outreachEmails: Array.from(outreachEmails.values()) as unknown as Array<
+      Record<string, unknown>
+    >,
+    companyProfile: companyProfile as unknown as Record<string, unknown>,
     idCounter,
   });
 }
 
-function hydrateMockStore() {
-  const data = loadMockStoreFromDisk();
+function hydrateLocalStore() {
+  const data = loadLocalStoreFromDisk();
   if (!data) return;
 
   if (data.idCounter) idCounter = data.idCounter;
@@ -176,17 +192,58 @@ function hydrateMockStore() {
       alerts.set(alert.id, alert);
     }
   }
+  if (data.basket) {
+    for (const item of data.basket) {
+      const entry = item as unknown as BasketItemInput & { id: string; createdAt: string };
+      basketItems.set(entry.id, entry);
+    }
+  }
+  if (data.priceHistory) {
+    for (const [id, points] of Object.entries(data.priceHistory)) {
+      priceHistory.set(id, points as unknown as PriceHistoryPoint[]);
+    }
+  }
+  if (data.manualStatuses) {
+    for (const [id, status] of Object.entries(data.manualStatuses)) {
+      manualStatuses.set(id, status as ManualStatus);
+    }
+  }
+  if (data.favorites) {
+    for (const id of data.favorites) favorites.add(id);
+  }
+  if (data.notes) {
+    for (const [id, value] of Object.entries(data.notes)) {
+      notes.set(id, value);
+    }
+  }
+  if (data.brandContacts) {
+    for (const item of data.brandContacts) {
+      const { evidence, ...contact } = item as unknown as BrandContact;
+      brandContacts.set(contact.id, contact);
+      if (evidence?.length) brandContactEvidence.set(contact.id, evidence);
+    }
+  }
+  if (data.outreachEmails) {
+    for (const item of data.outreachEmails) {
+      const email = item as unknown as OutreachEmail;
+      outreachEmails.set(email.id, email);
+    }
+  }
+  if (data.companyProfile) {
+    companyProfile = data.companyProfile as unknown as CompanyProfile;
+  }
 }
 
-hydrateMockStore();
+hydrateLocalStore();
 
-export const mockStore = {
+export const localStore = {
   basket: {
     getAll: () => Array.from(basketItems.values()),
     add: (item: BasketItemInput) => {
       const id = genId("basket");
       const entry = { ...item, id, createdAt: new Date().toISOString() };
       basketItems.set(id, entry);
+      persistLocalStore();
       return entry;
     },
     update: (id: string, data: Partial<BasketItemInput>) => {
@@ -194,10 +251,18 @@ export const mockStore = {
       if (!existing) return null;
       const updated = { ...existing, ...data };
       basketItems.set(id, updated);
+      persistLocalStore();
       return updated;
     },
-    remove: (id: string) => basketItems.delete(id),
-    clear: () => basketItems.clear(),
+    remove: (id: string) => {
+      const removed = basketItems.delete(id);
+      persistLocalStore();
+      return removed;
+    },
+    clear: () => {
+      basketItems.clear();
+      persistLocalStore();
+    },
   },
   watchlist: {
     getAll: () => Array.from(watchlist.values()),
@@ -205,7 +270,7 @@ export const mockStore = {
       const id = genId("wl");
       const entry = { ...item, id };
       watchlist.set(id, entry);
-      persistMockStore();
+      persistLocalStore();
       return entry;
     },
     update: (id: string, data: Partial<WatchlistItemData>) => {
@@ -213,12 +278,12 @@ export const mockStore = {
       if (!existing) return null;
       const updated = { ...existing, ...data };
       watchlist.set(id, updated);
-      persistMockStore();
+      persistLocalStore();
       return updated;
     },
     remove: (id: string) => {
       const removed = watchlist.delete(id);
-      persistMockStore();
+      persistLocalStore();
       return removed;
     },
     get: (id: string) => watchlist.get(id),
@@ -232,7 +297,7 @@ export const mockStore = {
       const id = genId("alert");
       const entry = { ...item, id };
       alerts.set(id, entry);
-      persistMockStore();
+      persistLocalStore();
       return entry;
     },
     update: (id: string, data: Partial<AlertNotificationData>) => {
@@ -240,7 +305,7 @@ export const mockStore = {
       if (!existing) return null;
       const updated = { ...existing, ...data };
       alerts.set(id, updated);
-      persistMockStore();
+      persistLocalStore();
       return updated;
     },
     getUnreadCount: () =>
@@ -254,22 +319,25 @@ export const mockStore = {
       const entry = { ...point, id };
       const existing = priceHistory.get(marketplaceResultId) ?? [];
       priceHistory.set(marketplaceResultId, [...existing, entry]);
+      persistLocalStore();
       return entry;
     },
   },
   manualStatus: {
     get: (id: string) => manualStatuses.get(id) ?? "review",
-    set: (id: string, status: ManualStatus) => manualStatuses.set(id, status),
+    set: (id: string, status: ManualStatus) => {
+      manualStatuses.set(id, status);
+      persistLocalStore();
+    },
   },
   favorites: {
     has: (id: string) => favorites.has(id),
     toggle: (id: string) => {
-      if (favorites.has(id)) {
-        favorites.delete(id);
-        return false;
-      }
-      favorites.add(id);
-      return true;
+      const isFavorite = !favorites.has(id);
+      if (isFavorite) favorites.add(id);
+      else favorites.delete(id);
+      persistLocalStore();
+      return isFavorite;
     },
     getAll: () => Array.from(favorites),
   },
@@ -278,6 +346,7 @@ export const mockStore = {
     set: (entityId: string, data: { userNotes?: string; aiNotes?: string }) => {
       const existing = notes.get(entityId) ?? {};
       notes.set(entityId, { ...existing, ...data });
+      persistLocalStore();
       return notes.get(entityId);
     },
   },
@@ -290,11 +359,12 @@ export const mockStore = {
       const id = genId("analysis");
       const entry = { ...analysis, id };
       analyses.push(entry);
-      persistMockStore();
+      persistLocalStore();
       return entry;
     },
     clear: () => {
       analyses.length = 0;
+      persistLocalStore();
     },
   },
   brandContacts: {
@@ -312,6 +382,7 @@ export const mockStore = {
       if (evidence?.length) {
         brandContactEvidence.set(contact.id, evidence);
       }
+      persistLocalStore();
       return { ...rest, evidence: evidence ?? [] };
     },
     update: (id: string, data: Partial<BrandContact>) => {
@@ -325,6 +396,7 @@ export const mockStore = {
       };
       brandContacts.set(id, updated);
       if (evidence) brandContactEvidence.set(id, evidence);
+      persistLocalStore();
       return {
         ...updated,
         evidence: brandContactEvidence.get(id) ?? evidence ?? [],
@@ -337,6 +409,7 @@ export const mockStore = {
           brandContactEvidence.delete(id);
         }
       }
+      persistLocalStore();
     },
   },
   priceCorrections: {
@@ -345,7 +418,7 @@ export const mockStore = {
     add: (entry: PriceCorrectionHistory) => {
       const existing = priceCorrections.get(entry.marketplaceResultId) ?? [];
       priceCorrections.set(entry.marketplaceResultId, [entry, ...existing]);
-      persistMockStore();
+      persistLocalStore();
       return entry;
     },
   },
@@ -370,7 +443,7 @@ export const mockStore = {
       }
     ) => {
       marketplaceResults.set(id, { id, ...data });
-      persistMockStore();
+      persistLocalStore();
       return marketplaceResults.get(id);
     },
     update: (
@@ -394,7 +467,7 @@ export const mockStore = {
       const existing = marketplaceResults.get(id) ?? { id, price: 0 };
       const updated = { ...existing, ...data };
       marketplaceResults.set(id, updated);
-      persistMockStore();
+      persistLocalStore();
       return updated;
     },
   },
@@ -405,6 +478,7 @@ export const mockStore = {
       ),
     add: (email: OutreachEmail) => {
       outreachEmails.set(email.id, email);
+      persistLocalStore();
       return email;
     },
     update: (id: string, data: Partial<OutreachEmail>) => {
@@ -412,6 +486,7 @@ export const mockStore = {
       if (!existing) return null;
       const updated = { ...existing, ...data };
       outreachEmails.set(id, updated);
+      persistLocalStore();
       return updated;
     },
   },
@@ -419,6 +494,7 @@ export const mockStore = {
     get: () => companyProfile,
     set: (data: Omit<CompanyProfile, "id">) => {
       companyProfile = { id: "default", ...data };
+      persistLocalStore();
       return companyProfile;
     },
   },
@@ -437,17 +513,17 @@ export const mockStore = {
     },
     add: (run: AnalysisRun, snapshots: AnalysisSnapshot[]) => {
       analysisRuns.set(run.id, { run, snapshots });
-      persistMockStore();
+      persistLocalStore();
       return { ...run, snapshots };
     },
     update: (id: string, run: AnalysisRun, snapshots: AnalysisSnapshot[]) => {
       analysisRuns.set(id, { run, snapshots });
-      persistMockStore();
+      persistLocalStore();
       return { ...run, snapshots };
     },
     remove: (id: string) => {
       const removed = analysisRuns.delete(id);
-      persistMockStore();
+      persistLocalStore();
       return removed;
     },
   },
@@ -455,12 +531,8 @@ export const mockStore = {
     get: () => ({ ...appSettingsOverrides }),
     set: (data: Partial<import("../types").AppSettings>) => {
       appSettingsOverrides = { ...appSettingsOverrides, ...data };
-      persistMockStore();
+      persistLocalStore();
       return appSettingsOverrides;
     },
   },
 };
-
-export function seedMockStore() {
-  // No default seed data — real analyses come from user actions
-}

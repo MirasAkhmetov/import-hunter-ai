@@ -57,7 +57,7 @@ export function useToast() {
   const ctx = React.useContext(ToastContext);
   if (!ctx) {
     return {
-      toast: (_message: Omit<ToastMessage, "id">) => {},
+      toast: () => {},
     };
   }
   return ctx;

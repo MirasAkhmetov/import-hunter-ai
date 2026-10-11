@@ -2,9 +2,8 @@ import { activeProviders } from "./index";
 import { deduplicateMarketplaceResults } from "./provider";
 import type { MarketplaceProvider } from "./provider";
 import type { MarketplaceResultData, ProductSearchQuery } from "../types";
-import { isMockMode } from "../config/mockMode";
 
-export type ProviderStatus = "active" | "failed" | "mock" | "disabled";
+export type ProviderStatus = "active" | "failed" | "disabled";
 
 export interface ProviderStatusInfo {
   marketplace: string;
@@ -48,7 +47,6 @@ function resolveProviderStatus(
 ): ProviderStatus {
   if (!provider.enabled) return "disabled";
   if (failed) return "failed";
-  if (isMockMode()) return "mock";
   return resultCount > 0 ? "active" : "failed";
 }
 

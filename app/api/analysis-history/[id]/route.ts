@@ -3,14 +3,12 @@ import {
   getAnalysisRun,
   compareWithLatest,
   deleteAnalysisRun,
-  seedMockAnalysisHistory,
 } from "@/lib/analysis-history/analysisHistoryService";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  seedMockAnalysisHistory();
   const { id } = await params;
   const run = await getAnalysisRun(id);
   if (!run) {

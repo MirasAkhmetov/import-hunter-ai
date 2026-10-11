@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { isMockMode } from "@/lib/config/mockMode";
+import { isDbAvailable } from "@/lib/db/availability";
 
 export async function GET() {
-  if (isMockMode()) {
+  if (!(await isDbAvailable())) {
     return NextResponse.json({ success: true, data: [] });
   }
 

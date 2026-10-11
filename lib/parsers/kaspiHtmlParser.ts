@@ -1,5 +1,5 @@
 import type { ParsedProduct } from "../types";
-import { parseKaspiUrl } from "../mock/kaspiUrlParser";
+import { parseKaspiUrl } from "./kaspiUrlParser";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";

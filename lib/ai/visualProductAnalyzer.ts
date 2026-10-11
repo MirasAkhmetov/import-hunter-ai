@@ -14,8 +14,7 @@ export interface VisualProductDescription {
   notableElements?: string[];
 }
 
-const MOCK_MODE = process.env.MOCK_MODE !== "false";
-const HAS_VISION_API = Boolean(process.env.OPENAI_API_KEY) && !MOCK_MODE;
+const HAS_VISION_API = Boolean(process.env.OPENAI_API_KEY);
 
 function inferTypeFromTitle(title: string): string {
   const lower = title.toLowerCase();
@@ -30,8 +29,8 @@ function inferTypeFromTitle(title: string): string {
   return "товар";
 }
 
-function buildMockDescription(
-  imageUrl: string,
+/** Описание по данным карточки (без Vision API) — только то, что известно из title/brand/model. */
+function buildHeuristicDescription(
   product?: Pick<ParsedProduct, "title" | "brand" | "model" | "category">
 ): VisualProductDescription {
   const title = product?.title ?? "";
@@ -45,12 +44,8 @@ function buildMockDescription(
     color: colorMatch?.[0],
     shape: undefined,
     material: undefined,
-    accessories: product?.model?.includes("Pro") ? "зарядный кейс" : undefined,
-    notableElements: [
-      product?.brand,
-      product?.model,
-      imageUrl.includes("kaspi") ? "kaspi-фото" : undefined,
-    ].filter(Boolean) as string[],
+    accessories: undefined,
+    notableElements: [product?.brand, product?.model].filter(Boolean) as string[],
   };
 }
 
@@ -99,18 +94,18 @@ export async function analyzeProductImage(
   product?: Pick<ParsedProduct, "title" | "brand" | "model" | "category">
 ): Promise<VisualProductDescription> {
   if (!imageUrl) {
-    return buildMockDescription("", product);
+    return buildHeuristicDescription(product);
   }
 
   if (!HAS_VISION_API) {
-    return buildMockDescription(imageUrl, product);
+    return buildHeuristicDescription(product);
   }
 
   try {
     return await analyzeWithVision(imageUrl);
   } catch {
-    console.warn("Vision analysis failed, using mock description");
-    return buildMockDescription(imageUrl, product);
+    console.warn("Vision analysis failed, using heuristic description");
+    return buildHeuristicDescription(product);
   }
 }
 

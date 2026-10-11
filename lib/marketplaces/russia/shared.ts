@@ -2,32 +2,20 @@ import type { MarketplaceProvider } from "../provider";
 import {
   buildSearchQueries,
   deduplicateMarketplaceResults,
+  filterResultsByBrand,
 } from "../provider";
+import { cachedSearch } from "../searchCache";
 import type {
   MarketplaceResultData,
   ParsedProduct,
   ProductSearchQuery,
 } from "../../types";
-import { getMockMarketplaceResults } from "../../mock/data";
-import { isMockMode } from "../../config/mockMode";
 
 export interface RussiaProviderConfig {
   name: string;
   marketplace: "wildberries" | "ozon";
   baseUrl: string;
-  mockDelay?: number;
   enabled?: boolean;
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function queryWithSearchTerm(
-  query: ProductSearchQuery,
-  searchTerm: string
-): ProductSearchQuery {
-  return { ...query, title: searchTerm };
 }
 
 async function realSearch(
@@ -63,32 +51,20 @@ export function createRussiaProvider(
     name,
     marketplace,
     baseUrl,
-    mockDelay = 600,
     enabled = true,
   } = config;
 
   async function search(
     query: ProductSearchQuery
   ): Promise<MarketplaceResultData[]> {
-    const searchQueries = buildSearchQueries(query);
+    const searchQueries = buildSearchQueries(query, marketplace);
     const collected: MarketplaceResultData[] = [];
-
-    if (isMockMode()) {
-      await delay(mockDelay);
-      for (const searchTerm of searchQueries) {
-        const results = getMockMarketplaceResults(
-          marketplace,
-          "RU",
-          queryWithSearchTerm(query, searchTerm)
-        );
-        collected.push(...results);
-      }
-      return deduplicateMarketplaceResults(collected);
-    }
 
     for (const searchTerm of searchQueries) {
       try {
-        const results = await realSearch(marketplace, searchTerm);
+        const results = await cachedSearch(marketplace, searchTerm, () =>
+          realSearch(marketplace, searchTerm)
+        );
         collected.push(...results);
       } catch (error) {
         console.warn(`[${marketplace}] search failed for "${searchTerm}":`, error);
@@ -100,23 +76,11 @@ export function createRussiaProvider(
       throw new Error("MARKETPLACE_UNAVAILABLE");
     }
 
-    return deduped;
+    // Площадка ответила, но товаров этого бренда нет — честно «не найдено», а не чужие бренды
+    return filterResultsByBrand(deduped, query.brand);
   }
 
   async function parseProduct(url: string): Promise<ParsedProduct> {
-    if (isMockMode()) {
-      const results = getMockMarketplaceResults(marketplace, "RU", { title: "" });
-      const item = results[0];
-      return {
-        source: marketplace,
-        title: item.title,
-        price: item.price,
-        currency: item.currency,
-        url,
-        imageUrl: item.imageUrl,
-      };
-    }
-
     return realParseProduct(marketplace, url);
   }
 

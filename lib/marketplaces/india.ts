@@ -1,11 +1,4 @@
 import type { MarketplaceProvider } from "./provider";
-import {
-  buildSearchQueries,
-  deduplicateMarketplaceResults,
-} from "./provider";
-import type { MarketplaceResultData, ParsedProduct, ProductSearchQuery } from "../types";
-import { getMockMarketplaceResults } from "../mock/data";
-import { isMockMode } from "../config/mockMode";
 
 export const INDIA_MARKETPLACES = ["flipkart", "amazon-in", "meesho"];
 
@@ -15,81 +8,18 @@ const INDIA_PROVIDER_CONFIGS = [
   { name: "Meesho", marketplace: "meesho", baseUrl: "https://www.meesho.com" },
 ];
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function queryWithSearchTerm(
-  query: ProductSearchQuery,
-  searchTerm: string
-): ProductSearchQuery {
-  return { ...query, title: searchTerm };
-}
-
-function createIndiaProvider(config: {
-  name: string;
-  marketplace: string;
-  baseUrl: string;
-}): MarketplaceProvider {
-  const { name, marketplace, baseUrl } = config;
-
-  return {
-    name,
-    marketplace,
-    country: "IN",
-    currency: "INR",
-    baseUrl,
-    enabled: isMockMode(),
-    async search(query: ProductSearchQuery): Promise<MarketplaceResultData[]> {
-      const searchQueries = buildSearchQueries(query);
-      const collected: MarketplaceResultData[] = [];
-
-      if (isMockMode()) {
-        await delay(500);
-        for (const sq of searchQueries) {
-          const results = getMockMarketplaceResults(
-            marketplace,
-            "IN",
-            queryWithSearchTerm(query, sq)
-          );
-          collected.push(...results);
-        }
-        return deduplicateMarketplaceResults(collected);
-      }
-
-      throw new Error(`${name} provider not implemented yet`);
-    },
-    async parseProduct(url: string): Promise<ParsedProduct> {
-      if (isMockMode()) {
-        const results = getMockMarketplaceResults(marketplace, "IN", { title: "" });
-        const item = results[0];
-        return {
-          source: marketplace,
-          title: item.title,
-          price: item.price,
-          currency: item.currency,
-          url,
-          imageUrl: item.imageUrl,
-        };
-      }
-      throw new Error(`${name} provider not implemented yet`);
-    },
-  };
-}
-
-export const indiaProviders: MarketplaceProvider[] =
-  INDIA_PROVIDER_CONFIGS.map(createIndiaProvider);
-
+// Skeleton: реальные парсеры для Индии ещё не реализованы
 export function createIndiaProviderSkeleton(
   marketplace: string,
-  name: string
+  name: string,
+  baseUrl = "https://www.flipkart.com"
 ): MarketplaceProvider {
   return {
     name,
     marketplace,
     country: "IN",
     currency: "INR",
-    baseUrl: "https://www.flipkart.com",
+    baseUrl,
     enabled: false,
     async search() {
       throw new Error(`${name} provider not implemented yet`);
@@ -99,3 +29,8 @@ export function createIndiaProviderSkeleton(
     },
   };
 }
+
+export const indiaProviders: MarketplaceProvider[] = INDIA_PROVIDER_CONFIGS.map(
+  ({ name, marketplace, baseUrl }) =>
+    createIndiaProviderSkeleton(marketplace, name, baseUrl)
+);

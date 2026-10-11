@@ -1,5 +1,4 @@
 import type { MarketplaceResultData } from "../types";
-import { parseLocalizedPrice } from "../parseLocalizedPrice";
 import { BROWSER_HEADERS } from "../price-verification/htmlPriceExtractor";
 import {
   extractTrendyolPriceFromApiItem,
@@ -10,12 +9,36 @@ import { extractSepetePriceFromText, isCouponPriceContext } from "../price-verif
 const HB_BASE = "https://www.hepsiburada.com";
 const TY_BASE = "https://www.trendyol.com";
 
+const TRENDYOL_SCROLL_STEPS = 3;
+
 const TRENDYOL_COOKIES = [
   { name: "storefrontId", value: "1", domain: ".trendyol.com", path: "/" },
   { name: "countryCode", value: "TR", domain: ".trendyol.com", path: "/" },
   { name: "language", value: "tr", domain: ".trendyol.com", path: "/" },
   { name: "culture", value: "tr-TR", domain: ".trendyol.com", path: "/" },
 ];
+
+const HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+};
+
+function decodeHtmlEntities(text: string): string {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, code: string) => {
+    if (code[0] === "#") {
+      const n =
+        code[1] === "x" || code[1] === "X"
+          ? parseInt(code.slice(2), 16)
+          : parseInt(code.slice(1), 10);
+      return Number.isFinite(n) ? String.fromCodePoint(n) : entity;
+    }
+    return HTML_ENTITIES[code.toLowerCase()] ?? entity;
+  });
+}
 
 function buildSearchResult(
   marketplace: string,
@@ -27,7 +50,7 @@ function buildSearchResult(
   return {
     marketplace,
     country: "TR",
-    title,
+    title: decodeHtmlEntities(title).trim(),
     price,
     currency: "TRY",
     url,
@@ -236,17 +259,57 @@ export async function searchHepsiburada(
   return dedupeResults(parsed);
 }
 
-async function withTurkeyBrowser<T>(
-  fn: (page: import("playwright").Page) => Promise<T>
-): Promise<T> {
+type Browser = import("playwright").Browser;
+
+// Один Chromium на все поиски: запуск браузера стоит секунды, а анализ делает десятки запросов.
+const BROWSER_IDLE_CLOSE_MS = 60_000;
+let sharedBrowser: Promise<Browser> | null = null;
+let browserUsers = 0;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function acquireBrowser(): Promise<Browser> {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+  browserUsers++;
+
+  const current = sharedBrowser ? await sharedBrowser.catch(() => null) : null;
+  if (current?.isConnected()) return current;
+
   const { chromium } = await import("playwright");
-  const browser = await chromium.launch({
+  sharedBrowser = chromium.launch({
     headless: true,
     args: ["--disable-blink-features=AutomationControlled"],
   });
+  try {
+    return await sharedBrowser;
+  } catch (error) {
+    sharedBrowser = null;
+    browserUsers--;
+    throw error;
+  }
+}
+
+function releaseBrowser() {
+  browserUsers = Math.max(0, browserUsers - 1);
+  if (browserUsers > 0 || !sharedBrowser) return;
+  idleTimer = setTimeout(() => {
+    const closing = sharedBrowser;
+    sharedBrowser = null;
+    idleTimer = null;
+    void closing?.then((b) => b.close()).catch(() => undefined);
+  }, BROWSER_IDLE_CLOSE_MS);
+}
+
+async function withTurkeyBrowser<T>(
+  fn: (page: import("playwright").Page) => Promise<T>
+): Promise<T> {
+  const browser = await acquireBrowser();
+  let context: import("playwright").BrowserContext | undefined;
 
   try {
-    const context = await browser.newContext({
+    context = await browser.newContext({
       userAgent: BROWSER_HEADERS["User-Agent"],
       locale: "tr-TR",
       timezoneId: "Europe/Istanbul",
@@ -265,7 +328,8 @@ async function withTurkeyBrowser<T>(
     const page = await context.newPage();
     return await fn(page);
   } finally {
-    await browser.close();
+    await context?.close().catch(() => undefined);
+    releaseBrowser();
   }
 }
 
@@ -332,13 +396,18 @@ function extractN11Price(text: string): number | null {
   return prices[0];
 }
 
+/** Строка — это только цена: «1.379 TL» / «1.365,21 TL» (не «En Çok Satan 1. Ürün», не «25 TL Kupon»). */
+const STANDALONE_TRY_PRICE = /^\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?\s*TL$/i;
+
 function extractTrendyolPriceFromCardText(text: string): number | null {
   const lines = text
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-  for (const line of lines) {
-    if (isCouponPriceContext(line) || /kupon/i.test(line)) continue;
+  for (const [index, line] of lines.entries()) {
+    if (!STANDALONE_TRY_PRICE.test(line)) continue;
+    // Цена по подписке Trendyol Plus идёт строкой после «Trendyol Plus ile» — это не цена для всех
+    if (/plus/i.test(lines[index - 1] ?? "")) continue;
     const price = parseTryPrice(line);
     if (price) return price;
   }
@@ -357,7 +426,9 @@ export async function searchTrendyol(
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
-    await page.waitForTimeout(10000);
+    await page
+      .waitForSelector('a[data-testid="product-card"]', { timeout: 15000 })
+      .catch(() => undefined);
 
     const apiUrl = `https://apigw.trendyol.com/discovery-web-searchgw-service/v2/api/infinite-scroll/sr?q=${encodeURIComponent(query)}&pi=1&culture=tr-TR&storefrontId=1&countryCode=TR&channelId=1`;
     try {
@@ -398,13 +469,25 @@ export async function searchTrendyol(
       // fall back to DOM parsing
     }
 
+    // Карточки подгружаются при прокрутке — без неё видно только ~10 товаров
+    for (let i = 0; i < TRENDYOL_SCROLL_STEPS; i++) {
+      await page.mouse.wheel(0, 2500);
+      await page.waitForTimeout(1200);
+    }
+
     const cards = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>('a[data-testid="product-card"]')].map((card) => ({
         href: card.getAttribute("href"),
         alt: card.querySelector("img[data-testid='image-img'], img")?.getAttribute("alt"),
         text: card.innerText,
+        // Актуальная цена: со скидкой (первое число в блоке) или единственная цена
         priceText:
-          card.querySelector(".prc-box-dscntd")?.textContent?.trim() ?? "",
+          (
+            card.querySelector(
+              '[data-testid="discounted-price"], .discounted-price, [data-testid="single-price"], .single-price, .prc-box-dscntd'
+            )?.textContent ?? ""
+          )
+            .match(/\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?\s*TL/i)?.[0] ?? "",
         image:
           card.querySelector("img[data-testid='image-img'], img[src*='dsmcdn']")?.getAttribute("src") ??
           undefined,
@@ -437,7 +520,10 @@ export async function searchN11(query: string): Promise<MarketplaceResultData[]>
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
-    await page.waitForTimeout(12000);
+    await page
+      .waitForSelector("a.product-item[href*='/urun/']", { timeout: 15000 })
+      .catch(() => undefined);
+    await page.waitForTimeout(1500);
 
     const cards = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>("a.product-item[href*='/urun/']")].map((card) => ({

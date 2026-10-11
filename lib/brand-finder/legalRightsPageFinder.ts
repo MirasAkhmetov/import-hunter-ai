@@ -185,7 +185,7 @@ export async function fetchLegalRightsPage(
 
     if (!hasLegalSignal) return null;
 
-    const contacts = parseContactsFromText(text, url, extractTitle(html));
+    const contacts = parseContactsFromText(text);
     const companyName = extractCompanyName(text);
     const bin = extractBin(text);
     const address = extractAddress(text);

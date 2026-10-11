@@ -43,7 +43,6 @@ const settingsSchema = z.object({
   customsPercent: z.coerce.number().min(0).max(100),
   minMarginPercent: z.coerce.number().min(0).max(100),
   minRoiPercent: z.coerce.number().min(0),
-  mockBrandContactsEnabled: z.coerce.boolean().optional(),
 });
 
 type SettingsForm = z.infer<typeof settingsSchema>;

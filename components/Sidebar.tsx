@@ -71,15 +71,6 @@ export function Sidebar() {
           );
         })}
       </nav>
-
-      <div className="border-t p-4">
-        <div className="rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 p-3">
-          <p className="text-xs font-medium text-blue-900">Mock-режим</p>
-          <p className="mt-1 text-xs text-blue-700">
-            Демо-данные активны
-          </p>
-        </div>
-      </div>
     </aside>
   );
 }

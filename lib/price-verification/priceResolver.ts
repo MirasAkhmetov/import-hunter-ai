@@ -1,4 +1,3 @@
-import { isMockMode } from "../config/searchSettings";
 import type { PriceSource } from "../types/priceVerification";
 
 export interface PriceResolutionInput {
@@ -22,10 +21,6 @@ export function resolvePriceSource(
     return "manual_override";
   }
   return input.priceSource ?? "search_result";
-}
-
-export function shouldUseMockPrice(isMockPrice?: boolean): boolean {
-  return isMockMode() && Boolean(isMockPrice);
 }
 
 export function getEffectivePurchasePrice(input: PriceResolutionInput): {
@@ -57,7 +52,7 @@ export function canAutoCalculateProfit(
   linkStatus: string,
   isMockPrice?: boolean
 ): boolean {
-  if (isMockPrice && !isMockMode()) return false;
+  if (isMockPrice) return false;
   if (matchScore < 85) return false;
   if (linkStatus === "mismatch" || linkStatus === "unavailable") return false;
   return true;

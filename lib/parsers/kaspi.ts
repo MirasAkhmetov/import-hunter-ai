@@ -1,13 +1,11 @@
 import type { ParsedProduct } from "../types";
 import { isValidKaspiUrl } from "../utils";
-import { getMockKaspiProduct } from "../mock/data";
 import {
   ensureAbsoluteKaspiImageUrl,
   fetchKaspiProductFromHtml,
   isInvalidKaspiProductPage,
 } from "./kaspiHtmlParser";
-import { parseKaspiUrl } from "../mock/kaspiUrlParser";
-import { isMockMode } from "../config/mockMode";
+import { parseKaspiUrl } from "./kaspiUrlParser";
 
 function enrichFromUrl(url: string, product: ParsedProduct): ParsedProduct {
   const parsed = parseKaspiUrl(url);
@@ -45,15 +43,11 @@ export async function parseKaspiProduct(url: string): Promise<ParsedProduct> {
     console.warn("Kaspi HTML fetch failed, using fallback:", error);
   }
 
-  if (isMockMode()) {
-    await delay(400);
-    return getMockKaspiProduct(url);
-  }
-
-  // Playwright fallback for production without mock
+  // Playwright fallback, если HTML-запрос не дал данных
+  let browser: import("playwright").Browser | undefined;
   try {
     const { chromium } = await import("playwright");
-    const browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
 
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -87,8 +81,6 @@ export async function parseKaspiProduct(url: string): Promise<ParsedProduct> {
       return { title, price, imageUrl, rating, reviewCount };
     });
 
-    await browser.close();
-
     if (isInvalidKaspiProductPage(product.title, product.price)) {
       throw new Error("PRODUCT_NOT_FOUND");
     }
@@ -111,9 +103,7 @@ export async function parseKaspiProduct(url: string): Promise<ParsedProduct> {
       throw new Error("PARSING_BLOCKED");
     }
     throw new Error("PARSING_BLOCKED");
+  } finally {
+    await browser?.close().catch(() => undefined);
   }
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

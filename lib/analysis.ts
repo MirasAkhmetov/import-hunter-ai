@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { isMockMode } from "./config/mockMode";
+import { isDbAvailable } from "./db/availability";
 import type { Prisma } from "@prisma/client";
 import { parseKaspiProduct } from "./parsers/kaspi";
 import {
@@ -13,7 +13,7 @@ import { runProductSearchOrchestrator } from "./search/searchOrchestrator";
 import type { MarketplaceSearchFn } from "./search/types";
 import { calculateProfit } from "./profitCalculator";
 import { getSettings } from "./settings";
-import { mockStore, nextMockId } from "./store/mockStore";
+import { localStore, nextLocalId } from "./store/localStore";
 import { findAndSaveBrandContacts } from "./brand-finder/brandContactService";
 import { verifyProductLink } from "./price-verification/linkVerifier";
 import {
@@ -48,7 +48,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_KASPI_URL: "Неправильная ссылка Kaspi. Используйте формат: https://kaspi.kz/shop/p/...",
   PRODUCT_NOT_FOUND: "Товар не найден на Kaspi.kz",
   MARKETPLACE_UNAVAILABLE: "Маркетплейс временно недоступен",
-  PARSING_BLOCKED: "Парсинг заблокирован. Попробуйте позже или включите mock-режим.",
+  PARSING_BLOCKED: "Парсинг заблокирован. Попробуйте позже.",
   NO_MATCHES: "Похожие товары не найдены",
   AI_API_ERROR: "Ошибка AI API. Проверьте ключ OpenAI.",
   ANALYSIS_TIMEOUT:
@@ -242,7 +242,7 @@ export async function runAnalysis(
       );
       if (existing) {
         existing.resultCount += status.resultCount;
-        if (status.status === "failed" && existing.status !== "mock") {
+        if (status.status === "failed" && existing.resultCount === 0) {
           existing.status = status.status;
           existing.error = status.error;
         }
@@ -352,11 +352,10 @@ export async function runAnalysis(
 
   report("completed");
 
-  let savedProduct: {
-    id: string;
-    marketplaceResults?: Array<{ id: string }>;
-  } | null = null;
-  if (!isMockMode()) {
+  const dbAvailable = await isDbAvailable();
+  let savedProductId: string | null = null;
+  const savedResultIds: string[] = [];
+  if (dbAvailable) {
     try {
       const productData = {
         source: kaspiProduct.source,
@@ -398,7 +397,7 @@ export async function runAnalysis(
       }
 
       for (const r of resultsWithProfit) {
-        await prisma.marketplaceResult.create({
+        const created = await prisma.marketplaceResult.create({
           data: {
             productId,
             marketplace: r.marketplace,
@@ -439,28 +438,26 @@ export async function runAnalysis(
                 }
               : undefined,
           },
+          select: { id: true },
         });
+        savedResultIds.push(created.id);
       }
 
-      savedProduct = await prisma.product.findUnique({
-        where: { id: productId },
-        include: {
-          marketplaceResults: {
-            include: { profitAnalyses: true },
-          },
-        },
-      });
-    } catch {
-      savedProduct = null;
+      savedProductId = productId;
+    } catch (error) {
+      console.warn("Failed to save analysis to DB:", error);
+      savedProductId = null;
+      savedResultIds.length = 0;
     }
   }
+  const savedToDb = savedProductId !== null;
 
   const foundResults = resultsWithProfit.filter(
     (item) => item.searchMethod !== "not_found"
   );
   const best = pickCheapestVerifiedResult(foundResults) ?? resultsWithProfit[0];
 
-  const productId = savedProduct?.id ?? "mock-" + Date.now();
+  const productId = savedProductId ?? nextLocalId("product");
 
   let brandContactsList: BrandContact[] = [];
   let brandFinderMeta: BrandFinderMeta | undefined;
@@ -484,7 +481,7 @@ export async function runAnalysis(
   }
 
   const marketplaceResultIds = resultsWithProfit.map(
-    (_, i) => savedProduct?.marketplaceResults?.[i]?.id ?? nextMockId("mr")
+    (_, i) => (savedToDb ? savedResultIds[i] : undefined) ?? nextLocalId("mr")
   );
 
   const analysisResult: AnalysisResult = {
@@ -505,8 +502,8 @@ export async function runAnalysis(
     },
     marketplaceResults: resultsWithProfit.map((r, i) => {
       const id = marketplaceResultIds[i]!;
-      if (isMockMode()) {
-        mockStore.marketplaceResults.set(id, {
+      if (!savedToDb) {
+        localStore.marketplaceResults.set(id, {
           price: r.finalPrice ?? r.price,
           originalPrice: r.originalPrice ?? r.price,
           finalPrice: r.finalPrice ?? r.price,
@@ -529,8 +526,8 @@ export async function runAnalysis(
     brandFinderMeta,
   };
 
-  if (isMockMode()) {
-    mockStore.analyses.add({
+  if (!savedToDb) {
+    localStore.analyses.add({
       productTitle: kaspiProduct.title,
       kaspiPrice: kaspiProduct.price,
       analyzedAt: new Date().toISOString(),
@@ -551,16 +548,15 @@ export async function runAnalysis(
 }
 
 export async function createAnalysisJob(kaspiUrl: string) {
-  if (isMockMode()) {
-    return { id: "mock-job-" + Date.now(), kaspiUrl, status: "pending" };
-  }
+  const localJob = () => ({ id: nextLocalId("job"), kaspiUrl, status: "pending" });
+  if (!(await isDbAvailable())) return localJob();
 
   try {
     return await prisma.analysisJob.create({
       data: { kaspiUrl, status: "pending" },
     });
   } catch {
-    return { id: "mock-job-" + Date.now(), kaspiUrl, status: "pending" };
+    return localJob();
   }
 }
 
@@ -568,7 +564,7 @@ export async function updateAnalysisJob(
   id: string,
   data: { status?: string; error?: string; result?: unknown; productId?: string }
 ) {
-  if (isMockMode()) return null;
+  if (!(await isDbAvailable())) return null;
 
   try {
     const updateData: Prisma.AnalysisJobUpdateInput = {

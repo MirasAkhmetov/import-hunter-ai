@@ -1,6 +1,6 @@
 import { prisma } from "../db";
 import { isDbAvailable } from "../db/availability";
-import { mockStore, seedMockStore } from "../store/mockStore";
+import { localStore, nextLocalId } from "../store/localStore";
 import { MARKETPLACE_LABELS } from "../types";
 import type {
   AnalysisCompareResult,
@@ -20,9 +20,8 @@ import { isIsoInDay } from "../dateRange";
 
 export { getSnapshotData };
 
-let idCounter = 1000;
 function genSnapshotId() {
-  return `snap-mock-${idCounter++}`;
+  return nextLocalId("snap");
 }
 
 function buildSnapshots(
@@ -156,7 +155,7 @@ export async function saveAnalysisRun(
   const snapshots = buildSnapshots(run.id, normalizedInput, now);
 
   if (!(await isDbAvailable())) {
-    mockStore.analysisRuns.add(run, snapshots);
+    localStore.analysisRuns.add(run, snapshots);
     return { ...run, snapshots };
   }
 
@@ -191,7 +190,7 @@ export async function saveAnalysisRun(
 
     return mapPrismaRunDetail(created);
   } catch {
-    mockStore.analysisRuns.add(run, snapshots);
+    localStore.analysisRuns.add(run, snapshots);
     return { ...run, snapshots };
   }
 }
@@ -212,7 +211,7 @@ export async function updateAnalysisRun(
   const snapshots = buildSnapshots(id, input, now);
 
   if (!(await isDbAvailable())) {
-    mockStore.analysisRuns.update(id, run, snapshots);
+    localStore.analysisRuns.update(id, run, snapshots);
     return { ...run, snapshots };
   }
 
@@ -249,7 +248,7 @@ export async function updateAnalysisRun(
 
     return mapPrismaRunDetail(updated);
   } catch {
-    mockStore.analysisRuns.update(id, run, snapshots);
+    localStore.analysisRuns.update(id, run, snapshots);
     return { ...run, snapshots };
   }
 }
@@ -257,12 +256,11 @@ export async function updateAnalysisRun(
 export async function listAnalysisRuns(
   filters: AnalysisHistoryFilters = {}
 ): Promise<AnalysisRun[]> {
-  seedMockStore();
 
   let runs: AnalysisRun[];
 
   if (!(await isDbAvailable())) {
-    runs = mockStore.analysisRuns.getAll();
+    runs = localStore.analysisRuns.getAll();
   } else {
     try {
       const rows = await prisma.analysisRun.findMany({
@@ -270,7 +268,7 @@ export async function listAnalysisRuns(
       });
       runs = rows.map(mapPrismaRun);
     } catch {
-      runs = mockStore.analysisRuns.getAll();
+      runs = localStore.analysisRuns.getAll();
     }
   }
 
@@ -278,10 +276,9 @@ export async function listAnalysisRuns(
 }
 
 export async function getAnalysisRun(id: string): Promise<AnalysisRunDetail | null> {
-  seedMockStore();
 
   if (!(await isDbAvailable())) {
-    return mockStore.analysisRuns.get(id);
+    return localStore.analysisRuns.get(id);
   }
 
   try {
@@ -289,23 +286,23 @@ export async function getAnalysisRun(id: string): Promise<AnalysisRunDetail | nu
       where: { id },
       include: { snapshots: true },
     });
-    if (!row) return mockStore.analysisRuns.get(id);
+    if (!row) return localStore.analysisRuns.get(id);
     return mapPrismaRunDetail(row);
   } catch {
-    return mockStore.analysisRuns.get(id);
+    return localStore.analysisRuns.get(id);
   }
 }
 
 export async function deleteAnalysisRun(id: string): Promise<boolean> {
   if (!(await isDbAvailable())) {
-    return mockStore.analysisRuns.remove(id);
+    return localStore.analysisRuns.remove(id);
   }
 
   try {
     await prisma.analysisRun.delete({ where: { id } });
     return true;
   } catch {
-    return mockStore.analysisRuns.remove(id);
+    return localStore.analysisRuns.remove(id);
   }
 }
 
@@ -369,11 +366,10 @@ export async function compareWithLatest(id: string): Promise<AnalysisCompareResu
 async function findLatestRunByKaspiUrl(
   kaspiUrl: string
 ): Promise<AnalysisRun | null> {
-  seedMockStore();
 
   let runs: AnalysisRun[];
   if (!(await isDbAvailable())) {
-    runs = mockStore.analysisRuns.getAll();
+    runs = localStore.analysisRuns.getAll();
   } else {
     try {
       const rows = await prisma.analysisRun.findMany({
@@ -383,7 +379,7 @@ async function findLatestRunByKaspiUrl(
       });
       return rows[0] ? mapPrismaRun(rows[0]) : null;
     } catch {
-      runs = mockStore.analysisRuns.getAll();
+      runs = localStore.analysisRuns.getAll();
     }
   }
 
@@ -527,8 +523,4 @@ function mapPrismaRunDetail(row: {
       createdAt: s.createdAt.toISOString(),
     })),
   };
-}
-
-export function seedMockAnalysisHistory() {
-  // History is populated from real user analyses only
 }

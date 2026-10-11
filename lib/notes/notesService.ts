@@ -1,6 +1,6 @@
 import { prisma } from "../db";
 import { isDbAvailable } from "../db/availability";
-import { mockStore } from "../store/mockStore";
+import { localStore } from "../store/localStore";
 import type { ManualStatus } from "../types/extended";
 
 export async function updateManualStatus(
@@ -8,7 +8,7 @@ export async function updateManualStatus(
   status: ManualStatus
 ) {
   if (!(await isDbAvailable())) {
-    mockStore.manualStatus.set(marketplaceResultId, status);
+    localStore.manualStatus.set(marketplaceResultId, status);
     return { id: marketplaceResultId, manualStatus: status };
   }
 
@@ -18,7 +18,7 @@ export async function updateManualStatus(
       data: { manualStatus: status },
     });
   } catch {
-    mockStore.manualStatus.set(marketplaceResultId, status);
+    localStore.manualStatus.set(marketplaceResultId, status);
     return { id: marketplaceResultId, manualStatus: status };
   }
 }
@@ -28,7 +28,7 @@ export async function toggleFavorite(
   entityType: "product" | "marketplace_result"
 ) {
   if (!(await isDbAvailable())) {
-    const isFavorite = mockStore.favorites.toggle(entityId);
+    const isFavorite = localStore.favorites.toggle(entityId);
     return { id: entityId, favorite: isFavorite };
   }
 
@@ -51,7 +51,7 @@ export async function toggleFavorite(
       data: { favorite: !result.favorite },
     });
   } catch {
-    const isFavorite = mockStore.favorites.toggle(entityId);
+    const isFavorite = localStore.favorites.toggle(entityId);
     return { id: entityId, favorite: isFavorite };
   }
 }
@@ -62,7 +62,7 @@ export async function updateNotes(
   data: { userNotes?: string; aiNotes?: string }
 ) {
   if (!(await isDbAvailable())) {
-    return mockStore.notes.set(entityId, data);
+    return localStore.notes.set(entityId, data);
   }
 
   try {
@@ -89,12 +89,12 @@ export async function updateNotes(
     }
     return data;
   } catch {
-    return mockStore.notes.set(entityId, data);
+    return localStore.notes.set(entityId, data);
   }
 }
 
 export async function getNotes(entityId: string) {
-  if (!(await isDbAvailable())) return mockStore.notes.get(entityId);
+  if (!(await isDbAvailable())) return localStore.notes.get(entityId);
 
   try {
     const note =
@@ -108,6 +108,6 @@ export async function getNotes(entityId: string) {
       aiNotes: note?.aiNotes ?? undefined,
     };
   } catch {
-    return mockStore.notes.get(entityId);
+    return localStore.notes.get(entityId);
   }
 }

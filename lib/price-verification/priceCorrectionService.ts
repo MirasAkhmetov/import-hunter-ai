@@ -1,6 +1,6 @@
 import { prisma } from "../db";
 import { isDbAvailable } from "../db/availability";
-import { mockStore } from "../store/mockStore";
+import { localStore } from "../store/localStore";
 import type { PriceCorrectionHistory } from "../types/priceVerification";
 import type { LinkStatus } from "../types/priceVerification";
 import { resolveFinalPrice } from "./priceResolver";
@@ -52,8 +52,8 @@ export async function updatePriceCorrection(
   });
 
   if (!(await isDbAvailable())) {
-    mockStore.priceCorrections.add(historyEntry);
-    mockStore.marketplaceResults.update(input.marketplaceResultId, {
+    localStore.priceCorrections.add(historyEntry);
+    localStore.marketplaceResults.update(input.marketplaceResultId, {
       correctedPrice: input.correctedPrice,
       finalPrice,
       currency: input.currency,
@@ -116,8 +116,8 @@ export async function updatePriceCorrection(
       isMockPrice: false,
     };
   } catch {
-    mockStore.priceCorrections.add(historyEntry);
-    mockStore.marketplaceResults.update(input.marketplaceResultId, {
+    localStore.priceCorrections.add(historyEntry);
+    localStore.marketplaceResults.update(input.marketplaceResultId, {
       correctedPrice: input.correctedPrice,
       finalPrice,
       currency: input.currency,
@@ -146,7 +146,7 @@ export async function getPriceCorrectionHistory(
   marketplaceResultId: string
 ): Promise<PriceCorrectionHistory[]> {
   if (!(await isDbAvailable())) {
-    return mockStore.priceCorrections.getByMarketplaceResultId(marketplaceResultId);
+    return localStore.priceCorrections.getByMarketplaceResultId(marketplaceResultId);
   }
 
   try {
@@ -156,22 +156,22 @@ export async function getPriceCorrectionHistory(
     });
     return rows.map(mapHistory);
   } catch {
-    return mockStore.priceCorrections.getByMarketplaceResultId(marketplaceResultId);
+    return localStore.priceCorrections.getByMarketplaceResultId(marketplaceResultId);
   }
 }
 
 async function getMarketplaceResultPrice(id: string) {
   if (!(await isDbAvailable())) {
-    const existing = mockStore.marketplaceResults.get(id);
+    const existing = localStore.marketplaceResults.get(id);
     if (existing) return existing;
-    mockStore.marketplaceResults.set(id, { price: 0, originalPrice: 0 });
-    return mockStore.marketplaceResults.get(id);
+    localStore.marketplaceResults.set(id, { price: 0, originalPrice: 0 });
+    return localStore.marketplaceResults.get(id);
   }
 
   try {
     return await prisma.marketplaceResult.findUnique({ where: { id } });
   } catch {
-    return mockStore.marketplaceResults.get(id);
+    return localStore.marketplaceResults.get(id);
   }
 }
 
@@ -210,7 +210,7 @@ export async function updateLinkStatus(
   };
 
   if (!(await isDbAvailable())) {
-    return mockStore.marketplaceResults.update(marketplaceResultId, data);
+    return localStore.marketplaceResults.update(marketplaceResultId, data);
   }
 
   try {
@@ -222,7 +222,7 @@ export async function updateLinkStatus(
       },
     });
   } catch {
-    return mockStore.marketplaceResults.update(marketplaceResultId, data);
+    return localStore.marketplaceResults.update(marketplaceResultId, data);
   }
 }
 

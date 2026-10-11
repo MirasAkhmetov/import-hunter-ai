@@ -16,8 +16,26 @@ export interface MarketplaceProvider {
   parseProduct(url: string): Promise<ParsedProduct>;
 }
 
-export function buildSearchQueries(query: ProductSearchQuery): string[] {
-  return buildMarketplaceSearchQueries(query);
+export function buildSearchQueries(
+  query: ProductSearchQuery,
+  marketplace?: string
+): string[] {
+  return buildMarketplaceSearchQueries(query, marketplace);
+}
+
+/**
+ * Оставляет только результаты нужного бренда: маркетплейсы часто игнорируют бренд
+ * в запросе и подставляют популярные товары других производителей.
+ */
+export function filterResultsByBrand(
+  results: MarketplaceResultData[],
+  brand?: string
+): MarketplaceResultData[] {
+  const normalize = (s: string) =>
+    s.toLocaleLowerCase("tr-TR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\p{L}\p{N}]+/gu, "");
+  const needle = brand ? normalize(brand) : "";
+  if (needle.length < 2) return results;
+  return results.filter((r) => normalize(r.title).includes(needle));
 }
 
 export function deduplicateMarketplaceResults(

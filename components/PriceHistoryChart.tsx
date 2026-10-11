@@ -15,22 +15,22 @@ import type { PriceHistoryPoint } from "@/lib/types/extended";
 
 interface PriceHistoryChartProps {
   marketplaceResultId: string;
-  basePrice?: number;
 }
 
-export function PriceHistoryChart({
-  marketplaceResultId,
-  basePrice = 95000,
-}: PriceHistoryChartProps) {
+export function PriceHistoryChart({ marketplaceResultId }: PriceHistoryChartProps) {
   const [data, setData] = useState<PriceHistoryPoint[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     fetch(
-      `/api/price-history?marketplaceResultId=${marketplaceResultId}&basePrice=${basePrice}`
+      `/api/price-history?marketplaceResultId=${encodeURIComponent(marketplaceResultId)}`
     )
       .then((r) => r.json())
-      .then((res) => setData(res.data ?? []));
-  }, [marketplaceResultId, basePrice]);
+      .then((res) => setData(res.data ?? []))
+      .catch(() => setData([]))
+      .finally(() => setLoading(false));
+  }, [marketplaceResultId]);
 
   const chartData = data.map((p) => ({
     date: new Date(p.checkedAt).toLocaleDateString("ru-RU", {
@@ -57,7 +57,9 @@ export function PriceHistoryChart({
             </LineChart>
           </ResponsiveContainer>
         ) : (
-          <p className="text-center text-slate-400 py-8">Загрузка...</p>
+          <p className="text-center text-slate-400 py-8">
+            {loading ? "Загрузка..." : "История цены пока не собрана"}
+          </p>
         )}
       </CardContent>
     </Card>

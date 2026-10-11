@@ -183,9 +183,7 @@ function safeOrigin(url: string): string | undefined {
 }
 
 export function parseContactsFromText(
-  text: string,
-  sourceUrl: string,
-  sourceTitle?: string
+  text: string
 ): Pick<ParsedWebsiteContact, "emails" | "phones" | "htmlExcerpt"> {
   return {
     emails: extractUniqueMatches(text, EMAIL_REGEX).filter(isValidEmail),

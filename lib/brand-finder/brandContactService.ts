@@ -1,7 +1,7 @@
 import { prisma } from "../db";
 import { isDbAvailable } from "../db/availability";
 import { findBrandContacts } from "../brand-finder/brandFinderService";
-import { mockStore, seedMockStore } from "../store/mockStore";
+import { localStore } from "../store/localStore";
 import type {
   BrandContact,
   BrandContactEvidence,
@@ -34,10 +34,9 @@ export interface CreateBrandContactInput {
 }
 
 export async function getBrandContacts(productId?: string) {
-  seedMockStore();
 
   if (!(await isDbAvailable())) {
-    const all = mockStore.brandContacts.getAll().map((c) => ({
+    const all = localStore.brandContacts.getAll().map((c) => ({
       ...c,
       evidence: c.evidence ?? [],
     }));
@@ -52,7 +51,7 @@ export async function getBrandContacts(productId?: string) {
     });
     return contacts.map(mapPrismaBrandContact);
   } catch {
-    const all = mockStore.brandContacts.getAll();
+    const all = localStore.brandContacts.getAll();
     return productId ? all.filter((c) => c.productId === productId) : all;
   }
 }
@@ -102,7 +101,7 @@ export async function createBrandContact(input: CreateBrandContactInput) {
   };
 
   if (!(await isDbAvailable())) {
-    return mockStore.brandContacts.add(contact);
+    return localStore.brandContacts.add(contact);
   }
 
   try {
@@ -144,7 +143,7 @@ export async function createBrandContact(input: CreateBrandContactInput) {
     });
     return mapPrismaBrandContact(created);
   } catch {
-    return mockStore.brandContacts.add(contact);
+    return localStore.brandContacts.add(contact);
   }
 }
 
@@ -160,7 +159,7 @@ export async function updateBrandContactStatus(
         : "needs_manual_check";
 
   if (!(await isDbAvailable())) {
-    return mockStore.brandContacts.update(id, { status, verificationStatus });
+    return localStore.brandContacts.update(id, { status, verificationStatus });
   }
 
   try {
@@ -171,7 +170,7 @@ export async function updateBrandContactStatus(
     });
     return mapPrismaBrandContact(updated);
   } catch {
-    return mockStore.brandContacts.update(id, { status, verificationStatus });
+    return localStore.brandContacts.update(id, { status, verificationStatus });
   }
 }
 
@@ -182,12 +181,12 @@ export async function findAndSaveBrandContacts(
   const found = result.contacts;
 
   if (!(await isDbAvailable())) {
-    mockStore.brandContacts.removeByProductId(product.id);
+    localStore.brandContacts.removeByProductId(product.id);
     for (const contact of found) {
-      mockStore.brandContacts.add({ ...contact, productId: product.id });
+      localStore.brandContacts.add({ ...contact, productId: product.id });
     }
     return {
-      contacts: mockStore.brandContacts.getByProductId(product.id),
+      contacts: localStore.brandContacts.getByProductId(product.id),
       meta: result.meta,
     };
   }
@@ -234,22 +233,21 @@ export async function findAndSaveBrandContacts(
     const contacts = await getBrandContacts(product.id);
     return { contacts, meta: result.meta };
   } catch {
-    mockStore.brandContacts.removeByProductId(product.id);
+    localStore.brandContacts.removeByProductId(product.id);
     for (const contact of found) {
-      mockStore.brandContacts.add({ ...contact, productId: product.id });
+      localStore.brandContacts.add({ ...contact, productId: product.id });
     }
     return {
-      contacts: mockStore.brandContacts.getByProductId(product.id),
+      contacts: localStore.brandContacts.getByProductId(product.id),
       meta: result.meta,
     };
   }
 }
 
 export async function getCompanyProfile(): Promise<CompanyProfile> {
-  seedMockStore();
 
   if (!(await isDbAvailable())) {
-    return mockStore.companyProfile.get();
+    return localStore.companyProfile.get();
   }
 
   try {
@@ -261,7 +259,7 @@ export async function getCompanyProfile(): Promise<CompanyProfile> {
     // fall through
   }
 
-  return mockStore.companyProfile.get();
+  return localStore.companyProfile.get();
 }
 
 export async function saveCompanyProfile(
@@ -270,7 +268,7 @@ export async function saveCompanyProfile(
   const now = new Date().toISOString();
 
   if (!(await isDbAvailable())) {
-    return mockStore.companyProfile.set({ ...data, updatedAt: now });
+    return localStore.companyProfile.set({ ...data, updatedAt: now });
   }
 
   try {
@@ -284,7 +282,7 @@ export async function saveCompanyProfile(
     });
     return mapPrismaCompanyProfile(profile);
   } catch {
-    return mockStore.companyProfile.set({ ...data, updatedAt: now });
+    return localStore.companyProfile.set({ ...data, updatedAt: now });
   }
 }
 
@@ -314,7 +312,7 @@ export async function generateOutreachEmail(
   };
 
   if (!(await isDbAvailable())) {
-    return mockStore.outreachEmails.add(email);
+    return localStore.outreachEmails.add(email);
   }
 
   try {
@@ -331,7 +329,7 @@ export async function generateOutreachEmail(
     });
     return mapPrismaOutreachEmail(created);
   } catch {
-    return mockStore.outreachEmails.add(email);
+    return localStore.outreachEmails.add(email);
   }
 }
 
@@ -346,7 +344,7 @@ export async function updateOutreachEmailStatus(
   const sentAt = status === "sent_manually" ? new Date().toISOString() : undefined;
 
   if (!(await isDbAvailable())) {
-    return mockStore.outreachEmails.update(id, {
+    return localStore.outreachEmails.update(id, {
       status,
       ...(sentAt ? { sentAt } : {}),
     });
@@ -362,7 +360,7 @@ export async function updateOutreachEmailStatus(
     });
     return mapPrismaOutreachEmail(updated);
   } catch {
-    return mockStore.outreachEmails.update(id, {
+    return localStore.outreachEmails.update(id, {
       status,
       ...(sentAt ? { sentAt } : {}),
     });
@@ -370,10 +368,9 @@ export async function updateOutreachEmailStatus(
 }
 
 export async function getOutreachEmails(productId?: string) {
-  seedMockStore();
 
   if (!(await isDbAvailable())) {
-    const all = mockStore.outreachEmails.getAll();
+    const all = localStore.outreachEmails.getAll();
     return productId ? all.filter((e) => e.productId === productId) : all;
   }
 
@@ -384,7 +381,7 @@ export async function getOutreachEmails(productId?: string) {
     });
     return emails.map(mapPrismaOutreachEmail);
   } catch {
-    const all = mockStore.outreachEmails.getAll();
+    const all = localStore.outreachEmails.getAll();
     return productId ? all.filter((e) => e.productId === productId) : all;
   }
 }

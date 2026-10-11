@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/settings";
-import { mergeSearchSettings } from "@/lib/config/searchSettings";
 import { z } from "zod";
 
 const settingsSchema = z.object({
@@ -24,19 +23,16 @@ const settingsSchema = z.object({
   minRoiPercent: z.number().min(0).max(1000).optional(),
   searchApiProvider: z.string().optional(),
   searchApiKey: z.string().optional(),
-  mockBrandContactsEnabled: z.boolean().optional(),
 });
 
 export async function GET() {
   const settings = await getSettings();
-  const search = mergeSearchSettings({
-    mockBrandContactsEnabled: settings.mockBrandContactsEnabled,
-  });
   return NextResponse.json({
     success: true,
     data: {
       ...settings,
-      ...search,
+      // Ключ не отдаём клиенту — PUT игнорирует эту маску
+      searchApiKey: settings.searchApiKey ? "••••••••" : undefined,
     },
   });
 }

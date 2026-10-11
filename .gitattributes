@@ -1,0 +1,5 @@
+# Windows-скрипты должны иметь CRLF, иначе cmd.exe их неправильно читает
+*.bat text eol=crlf
+# Mac/Linux-скрипты — только LF
+*.command text eol=lf
+*.sh text eol=lf

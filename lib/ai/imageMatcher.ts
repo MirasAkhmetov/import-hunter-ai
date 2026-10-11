@@ -5,8 +5,7 @@ export interface ImageComparisonResult {
   reasoning?: string;
 }
 
-const MOCK_MODE = process.env.MOCK_MODE !== "false";
-const HAS_VISION_API = Boolean(process.env.OPENAI_API_KEY) && !MOCK_MODE;
+const HAS_VISION_API = Boolean(process.env.OPENAI_API_KEY);
 
 function extractImageKey(url?: string): string | null {
   if (!url) return null;
@@ -21,10 +20,6 @@ function extractImageKey(url?: string): string | null {
 
 function isKaspiCdn(url: string): boolean {
   return /kaspi\.(kz|shop)/i.test(url) || url.includes("kaspi");
-}
-
-function isUnsplash(url: string): boolean {
-  return url.includes("unsplash.com") || url.includes("images.unsplash");
 }
 
 export function calculateImageSimilarityScore(
@@ -52,10 +47,6 @@ export function calculateImageSimilarityScore(
     } catch {
       // ignore invalid URLs
     }
-  }
-
-  if (isUnsplash(kaspiImageUrl) || isUnsplash(candidateImageUrl)) {
-    if (kaspiImageUrl !== candidateImageUrl) return 28;
   }
 
   let score = 42;

@@ -1,10 +1,9 @@
 import fs from "fs";
 import path from "path";
-import { isMockMode } from "../config/mockMode";
 
-const STORE_FILE = path.join(process.cwd(), ".mock-data", "store.json");
+const STORE_FILE = path.join(process.cwd(), ".local-data", "store.json");
 
-export interface PersistedMockData {
+export interface PersistedLocalData {
   appSettingsOverrides?: Record<string, unknown>;
   analysisRuns?: Array<{
     run: Record<string, unknown>;
@@ -15,27 +14,33 @@ export interface PersistedMockData {
   priceCorrections?: Record<string, Array<Record<string, unknown>>>;
   watchlist?: Array<Record<string, unknown>>;
   alerts?: Array<Record<string, unknown>>;
+  basket?: Array<Record<string, unknown>>;
+  priceHistory?: Record<string, Array<Record<string, unknown>>>;
+  manualStatuses?: Record<string, string>;
+  favorites?: string[];
+  notes?: Record<string, { userNotes?: string; aiNotes?: string }>;
+  brandContacts?: Array<Record<string, unknown>>;
+  outreachEmails?: Array<Record<string, unknown>>;
+  companyProfile?: Record<string, unknown>;
   idCounter?: number;
 }
 
 let loaded = false;
 
-export function loadMockStoreFromDisk(): PersistedMockData | null {
-  if (!isMockMode() || loaded) return null;
+export function loadLocalStoreFromDisk(): PersistedLocalData | null {
+  if (loaded) return null;
   loaded = true;
 
   try {
     if (!fs.existsSync(STORE_FILE)) return null;
     const raw = fs.readFileSync(STORE_FILE, "utf-8");
-    return JSON.parse(raw) as PersistedMockData;
+    return JSON.parse(raw) as PersistedLocalData;
   } catch {
     return null;
   }
 }
 
-export function saveMockStoreToDisk(data: PersistedMockData): void {
-  if (!isMockMode()) return;
-
+export function saveLocalStoreToDisk(data: PersistedLocalData): void {
   try {
     const dir = path.dirname(STORE_FILE);
     if (!fs.existsSync(dir)) {
@@ -43,6 +48,6 @@ export function saveMockStoreToDisk(data: PersistedMockData): void {
     }
     fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), "utf-8");
   } catch (error) {
-    console.warn("Failed to persist mock store:", error);
+    console.warn("Failed to persist local store:", error);
   }
 }

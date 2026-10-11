@@ -126,7 +126,6 @@ export interface AppSettings {
   minRoiPercent: number;
   searchApiProvider?: string;
   searchApiKey?: string;
-  mockBrandContactsEnabled?: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {

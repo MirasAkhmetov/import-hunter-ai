@@ -1,6 +1,7 @@
-import type { ParsedProduct, ProductSearchQuery } from "../types";
-import { marketplaceSearchKeywords } from "../marketplaces/marketplaceSearchQuery";
-
+/**
+ * Эвристический разбор slug ссылки Kaspi (бренд, модель, категория, цвет, объём).
+ * Используется только для обогащения реально спарсенных данных — не как источник цены.
+ */
 const KNOWN_BRANDS = [
   "braun", "apple", "samsung", "xiaomi", "dyson", "philips", "bosch",
   "tefal", "redmond", "kitfort", "polaris", "lg", "sony", "jbl",
@@ -42,7 +43,6 @@ export interface ParsedKaspiUrl {
   color?: string;
   capacity?: string;
   title: string;
-  estimatedPriceKzt: number;
 }
 
 function extractSlug(url: string): string {
@@ -112,23 +112,6 @@ function extractColor(slug: string): string | undefined {
   return undefined;
 }
 
-function estimatePrice(category?: string, brand?: string): number {
-  if (category === "Аэрогрили") return brand === "braun" ? 129900 : 54990;
-  if (category === "Наушники и гарнитуры") return 129990;
-  if (category === "Смартфоны") return 199990;
-  if (category === "Парогенераторы") return brand === "braun" ? 399990 : 249990;
-  if (category === "Пылесосы") return 349990;
-  return 79990;
-}
-
-const IMAGE_BY_CATEGORY: Record<string, string> = {
-  "Аэрогрили": "https://images.unsplash.com/photo-1585515320310-259814833e95?w=400&h=400&fit=crop",
-  "Наушники и гарнитуры": "https://images.unsplash.com/photo-1606220945770-b5b6c2c55bf1?w=400&h=400&fit=crop",
-  "Смартфоны": "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&h=400&fit=crop",
-  "Пылесосы": "https://images.unsplash.com/photo-1558317374-067fb5f30001?w=400&h=400&fit=crop",
-  "Парогенераторы": "https://images.unsplash.com/photo-1582735689369-4fe89db7114c?w=400&h=400&fit=crop",
-};
-
 export function parseKaspiUrl(url: string): ParsedKaspiUrl {
   const slug = extractSlug(url);
   const brand = detectBrand(slug);
@@ -137,7 +120,7 @@ export function parseKaspiUrl(url: string): ParsedKaspiUrl {
   const catInfo = detectCategory(slug, brand, model);
   const capacity = extractCapacity(slug);
   const color = extractColor(slug);
-  const category = catInfo?.category ?? "Бытовая техника";
+  const category = catInfo?.category;
   const productTypeRu = catInfo?.titleRu ?? "товар";
 
   let title = humanizeSlug(slug);
@@ -145,22 +128,6 @@ export function parseKaspiUrl(url: string): ParsedKaspiUrl {
     title = `${brandLabel} ${model}${capacity ? ` ${capacity}` : ""}${color ? `, ${color.toLowerCase()}` : ""} — ${productTypeRu}`;
   } else if (brandLabel) {
     title = `${brandLabel} ${title} — ${productTypeRu}`;
-  }
-
-  // Специальный кейс Braun HF5075 из URL пользователя
-  if (slug.includes("braun-hf5075")) {
-    return {
-      slug,
-      brand: "braun",
-      brandLabel: "Braun",
-      model: "HF5075IBK",
-      category: "Аэрогрили",
-      productTypeRu: "аэрогриль",
-      color: "Чёрный",
-      capacity: "6 л",
-      title: "Braun HF5075IBK 6 л, чёрный — аэрогриль",
-      estimatedPriceKzt: 129900,
-    };
   }
 
   return {
@@ -173,45 +140,5 @@ export function parseKaspiUrl(url: string): ParsedKaspiUrl {
     color,
     capacity,
     title,
-    estimatedPriceKzt: estimatePrice(category, brand),
-  };
-}
-
-export function parsedUrlToProduct(url: string, parsed: ParsedKaspiUrl): ParsedProduct {
-  const specs: Record<string, string> = {};
-  if (parsed.capacity) specs["Объём"] = parsed.capacity;
-  if (parsed.color) specs["Цвет"] = parsed.color;
-  if (parsed.brandLabel) specs["Бренд"] = parsed.brandLabel;
-  if (parsed.model) specs["Модель"] = parsed.model;
-
-  return {
-    source: "kaspi",
-    title: parsed.title,
-    brand: parsed.brandLabel,
-    model: parsed.model,
-    category: parsed.category,
-    price: parsed.estimatedPriceKzt,
-    currency: "KZT",
-    url,
-    imageUrl: IMAGE_BY_CATEGORY[parsed.category ?? ""] ?? IMAGE_BY_CATEGORY["Аэрогрили"],
-    rating: undefined,
-    reviewCount: 0,
-    specifications: Object.keys(specs).length ? specs : undefined,
-  };
-}
-
-export function parsedUrlToSearchQuery(product: ParsedProduct): ProductSearchQuery {
-  const base = {
-    title: product.title,
-    brand: product.brand,
-    model: product.model,
-    category: product.category,
-    specifications: product.specifications,
-    imageUrl: product.imageUrl,
-    sourcePriceKzt: product.price,
-  };
-  return {
-    ...base,
-    keywords: marketplaceSearchKeywords(base),
   };
 }

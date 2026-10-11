@@ -132,6 +132,8 @@ export default function AnalyzePage() {
     setProfitUserInputs((prev) =>
       prev ? applyTaxFromSettings(prev, appSettings) : prev
     );
+    // Пересчитываем только при смене налоговых настроек, а не на каждый ввод пользователя
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appSettings.taxRegime, appSettings.taxPercent]);
   const marketplaceFilterOptions = useMemo(
     () => marketplaceOptionsForCountry(countryFilter),
@@ -669,10 +671,7 @@ export default function AnalyzePage() {
                       <PriceCorrectionHistoryTable
                         marketplaceResultId={bestResult.id}
                       />
-                      <PriceHistoryChart
-                        marketplaceResultId={bestResult.id}
-                        basePrice={bestResult.profit.purchasePriceKzt}
-                      />
+                      <PriceHistoryChart marketplaceResultId={bestResult.id} />
                     </>
                   )}
                 </>

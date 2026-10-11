@@ -22,8 +22,6 @@ export interface MatchResult {
   reasoning: string;
 }
 
-const MOCK_MODE = process.env.MOCK_MODE !== "false";
-
 export async function matchProducts(
   sourceProduct: ParsedProduct,
   candidates: MarketplaceResultData[],
@@ -41,15 +39,15 @@ export async function matchProducts(
     visualDescription
   );
 
-  if (MOCK_MODE || !process.env.OPENAI_API_KEY) {
-    return matchProductsMock(sourceProduct, candidates, imageScores);
+  if (!process.env.OPENAI_API_KEY) {
+    return matchProductsHeuristic(sourceProduct, candidates, imageScores);
   }
 
   try {
     return await matchProductsWithAI(sourceProduct, candidates, imageScores);
   } catch {
     console.warn("AI matching failed, falling back to heuristic matching");
-    return matchProductsMock(sourceProduct, candidates, imageScores);
+    return matchProductsHeuristic(sourceProduct, candidates, imageScores);
   }
 }
 
@@ -93,7 +91,7 @@ async function buildImageSimilarityScores(
   return scores;
 }
 
-function matchProductsMock(
+function matchProductsHeuristic(
   sourceProduct: ParsedProduct,
   candidates: MarketplaceResultData[],
   imageScores: Map<string, number>
@@ -198,8 +196,8 @@ export async function generateRecommendation(
     }
   >
 ): Promise<string> {
-  if (MOCK_MODE || !process.env.OPENAI_API_KEY) {
-    return generateRecommendationMock(sourceProduct, results);
+  if (!process.env.OPENAI_API_KEY) {
+    return generateRecommendationHeuristic(sourceProduct, results);
   }
 
   try {
@@ -223,14 +221,14 @@ export async function generateRecommendation(
 
     return (
       response.choices[0]?.message?.content ??
-      generateRecommendationMock(sourceProduct, results)
+      generateRecommendationHeuristic(sourceProduct, results)
     );
   } catch {
-    return generateRecommendationMock(sourceProduct, results);
+    return generateRecommendationHeuristic(sourceProduct, results);
   }
 }
 
-function generateRecommendationMock(
+function generateRecommendationHeuristic(
   sourceProduct: ParsedProduct,
   results: Array<
     MarketplaceResultData & {

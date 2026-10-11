@@ -7,7 +7,7 @@ import { getSettings } from "../settings";
 import { convertToKzt } from "../currency";
 import { recordPriceHistory } from "../price-history/priceHistoryService";
 import type { AlertNotificationData, WatchlistItemData } from "../types/extended";
-import { mockStore } from "../store/mockStore";
+import { localStore } from "../store/localStore";
 import { isDbAvailable } from "../db/availability";
 import { prisma } from "../db";
 
@@ -25,7 +25,7 @@ export interface PriceCheckResult {
 async function setWatchlistTriggered(id: string) {
   const now = new Date().toISOString();
   if (!(await isDbAvailable())) {
-    mockStore.watchlist.update(id, {
+    localStore.watchlist.update(id, {
       alertStatus: "triggered",
       alertTriggeredAt: now,
       status: "price_reached",
@@ -42,7 +42,7 @@ async function setWatchlistTriggered(id: string) {
       },
     });
   } catch {
-    mockStore.watchlist.update(id, {
+    localStore.watchlist.update(id, {
       alertStatus: "triggered",
       alertTriggeredAt: now,
       status: "price_reached",
@@ -54,7 +54,7 @@ async function createPriceAlert(
   data: Omit<AlertNotificationData, "id" | "createdAt" | "readAt">
 ) {
   if (!(await isDbAvailable())) {
-    return mockStore.alerts.add({
+    return localStore.alerts.add({
       ...data,
       createdAt: new Date().toISOString(),
       readAt: null,
@@ -85,7 +85,7 @@ async function createPriceAlert(
       priceCheckedAt: data.priceCheckedAt,
     } as AlertNotificationData;
   } catch {
-    return mockStore.alerts.add({
+    return localStore.alerts.add({
       ...data,
       createdAt: new Date().toISOString(),
       readAt: null,
@@ -100,7 +100,7 @@ async function updateWatchlistPrice(
   checkedAt: string
 ) {
   if (!(await isDbAvailable())) {
-    mockStore.watchlist.update(id, {
+    localStore.watchlist.update(id, {
       currentPrice: price,
       currentCurrency: currency,
       lastCheckedAt: checkedAt,
@@ -114,7 +114,7 @@ async function updateWatchlistPrice(
       data: { currentPrice: price, currentCurrency: currency, lastCheckedAt: new Date(checkedAt) },
     });
   } catch {
-    mockStore.watchlist.update(id, {
+    localStore.watchlist.update(id, {
       currentPrice: price,
       currentCurrency: currency,
       lastCheckedAt: checkedAt,

@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
 
 const STATUS_LABELS: Record<ProviderStatusInfo["status"], string> = {
   active: "Активен",
-  mock: "Mock",
   failed: "Ошибка",
   disabled: "Отключён",
 };
@@ -18,7 +17,6 @@ const STATUS_VARIANT: Record<
   "default" | "secondary" | "destructive" | "outline"
 > = {
   active: "default",
-  mock: "secondary",
   failed: "destructive",
   disabled: "outline",
 };

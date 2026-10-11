@@ -103,9 +103,66 @@ function titleWordsForSearch(title: string, brand?: string): string[] {
 /**
  * Поисковые запросы для маркетплейсов — без артикула / SKU / model-кода.
  */
-export function buildMarketplaceSearchQueries(
-  query: ProductSearchQuery
+/** Названия категории на RU / EN / TR — для сравнения категории с заголовками маркетплейсов. */
+export function categoryMatchTerms(category: string): string[] {
+  const tr = CATEGORY_SEARCH_TR[category]?.split(/\s+/) ?? [];
+  return [category, CATEGORY_SEARCH_EN[category], CATEGORY_SEARCH_RU[category], ...tr]
+    .filter((term): term is string => Boolean(term && term.length >= 4));
+}
+
+const MAX_QUERIES_PER_MARKETPLACE = 3;
+
+/** Модель для поиска: «HF5075IBK» → «HF5075IBK» (короткие/мусорные коды отбрасываем). */
+function modelForSearch(model?: string): string | undefined {
+  const m = model?.trim();
+  if (!m || m.length < 3 || hasCyrillic(m)) return undefined;
+  return m;
+}
+
+/**
+ * Запросы под конкретную площадку: сначала точная модель, затем бренд + категория
+ * на языке площадки. Без кириллицы для Турции и без «голого» бренда —
+ * такие запросы дают нерелевантную выдачу и стоят отдельного захода в браузер.
+ */
+function buildQueriesForMarketplace(
+  query: ProductSearchQuery,
+  marketplace: string
 ): string[] {
+  const brand = query.brand?.trim();
+  const model = modelForSearch(query.model);
+  const category = query.category;
+  const en = category ? CATEGORY_SEARCH_EN[category] : undefined;
+  const tr = category ? CATEGORY_SEARCH_TR[category] : undefined;
+  const ru = category ? CATEGORY_SEARCH_RU[category] : undefined;
+  const isRu = RU_MARKETPLACES.has(marketplace);
+
+  const queries: string[] = [];
+  if (brand && model) {
+    queries.push(model.toLowerCase().includes(brand.toLowerCase()) ? model : `${brand} ${model}`);
+  }
+  if (brand) {
+    if (isRu && ru) queries.push(`${brand} ${ru}`);
+    if (!isRu && tr) queries.push(`${brand} ${tr}`);
+    if (en) queries.push(`${brand} ${en}`);
+  }
+
+  if (queries.length === 0) {
+    queries.push(...buildMarketplaceSearchQueries(query));
+  }
+
+  return [...new Set(queries.map((q) => q.trim()))]
+    .filter((q) => q.length > 2 && (isRu || !hasCyrillic(q)))
+    .slice(0, MAX_QUERIES_PER_MARKETPLACE);
+}
+
+export function buildMarketplaceSearchQueries(
+  query: ProductSearchQuery,
+  marketplace?: string
+): string[] {
+  if (marketplace && (TR_MARKETPLACES.has(marketplace) || RU_MARKETPLACES.has(marketplace))) {
+    return buildQueriesForMarketplace(query, marketplace);
+  }
+
   const queries: string[] = [];
   const brand = query.brand?.trim();
   const specs = specValuesForSearch(query.specifications);
