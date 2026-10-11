@@ -5,6 +5,7 @@ import {
 import { buildSearchQuery } from "../aiMatcher";
 import { activeProviders } from "../marketplaces";
 import type { MarketplaceResultData, ProductSearchQuery } from "../types";
+import { isConfidentModelMatch } from "../matching/pickBestPerMarketplace";
 import {
   buildBrandSearchQuery,
   createMarketplaceNotFoundResult,
@@ -45,8 +46,20 @@ function pickBestForMarketplace(
   marketplace: string,
   minScore: number
 ): MarketplaceResultData | undefined {
-  const candidates = matched
-    .filter((item) => item.marketplace === marketplace)
+  const forMarketplace = matched.filter((item) => item.marketplace === marketplace);
+
+  // Несколько карточек той же модели того же бренда — берём самую дешёвую.
+  // Оценка совпадения между ними отличается только эвристикой фото и ничего не значит.
+  const sameModel = forMarketplace
+    .filter(
+      (item) =>
+        isConfidentModelMatch(item) &&
+        (item.finalMatchScore ?? item.matchScore ?? 0) >= minScore
+    )
+    .sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+  if (sameModel.length > 0) return sameModel[0];
+
+  const candidates = forMarketplace
     .sort((a, b) => {
       const topDiff = Number(b.isTopMatch) - Number(a.isTopMatch);
       if (topDiff !== 0) return topDiff;

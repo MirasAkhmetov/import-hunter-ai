@@ -1,3 +1,22 @@
+interface MatchableItem {
+  searchMethod?: "image" | "text" | "not_found";
+  isMockPrice?: boolean;
+  finalPrice?: number;
+  price?: number;
+  matchDetails?: { brandMatch?: boolean; modelMatch?: boolean };
+}
+
+/** Точно тот же товар: совпали и бренд, и модель, и есть реальная цена. */
+export function isConfidentModelMatch(item: MatchableItem): boolean {
+  return Boolean(
+    item.searchMethod !== "not_found" &&
+      !item.isMockPrice &&
+      (item.finalPrice ?? item.price ?? 0) > 0 &&
+      item.matchDetails?.brandMatch &&
+      item.matchDetails?.modelMatch
+  );
+}
+
 /** Оставляет лучший результат на каждый маркетплейс. */
 export function pickBestPerMarketplace<
   T extends {
@@ -11,12 +30,19 @@ export function pickBestPerMarketplace<
     finalPrice?: number;
     price?: number;
     profit?: { roiPercent?: number; purchasePriceKzt?: number };
+    matchDetails?: { brandMatch?: boolean; modelMatch?: boolean };
   },
 >(results: T[]): T[] {
   const best = new Map<string, T>();
 
   const rank = (item: T) => {
     if (item.searchMethod === "not_found") return -1_000_000;
+
+    // Та же модель того же бренда: дальше решает только цена (дешевле — лучше)
+    if (isConfidentModelMatch(item)) {
+      const priceKzt = item.profit?.purchasePriceKzt ?? item.finalPrice ?? item.price ?? 0;
+      return 10_000 - priceKzt / 1_000_000;
+    }
 
     let score = item.finalMatchScore ?? item.matchScore ?? 0;
     if (item.isExactMatch) score += 1000;
