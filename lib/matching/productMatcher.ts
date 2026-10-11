@@ -220,7 +220,11 @@ export function scoreProductMatch(
   const candidateTitle = normalizeText(candidate.title);
 
   const brandMatch = Boolean(sourceBrand && candidateTitle.includes(sourceBrand));
-  const modelMatch = Boolean(sourceModel && candidateTitle.includes(sourceModel));
+  // «HF5075IBK» = «HF 5075 IBK» = «HF-5075-IBK»: сравниваем без пробелов и разделителей
+  const compact = (value: string) => value.replace(/\s+/g, "");
+  const modelMatch = Boolean(
+    sourceModel && compact(candidateTitle).includes(compact(sourceModel))
+  );
   const specsMatchPercent = compareSpecifications(
     source.specifications,
     candidate.specifications

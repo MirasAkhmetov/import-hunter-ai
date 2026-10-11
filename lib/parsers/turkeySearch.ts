@@ -1,5 +1,6 @@
 import type { MarketplaceResultData } from "../types";
 import { BROWSER_HEADERS } from "../price-verification/htmlPriceExtractor";
+import { withBrowserPage } from "../browser/sharedBrowser";
 import {
   extractTrendyolPriceFromApiItem,
   normalizeTurkishLiraPrice,
@@ -259,78 +260,19 @@ export async function searchHepsiburada(
   return dedupeResults(parsed);
 }
 
-type Browser = import("playwright").Browser;
-
-// Один Chromium на все поиски: запуск браузера стоит секунды, а анализ делает десятки запросов.
-const BROWSER_IDLE_CLOSE_MS = 60_000;
-let sharedBrowser: Promise<Browser> | null = null;
-let browserUsers = 0;
-let idleTimer: ReturnType<typeof setTimeout> | null = null;
-
-async function acquireBrowser(): Promise<Browser> {
-  if (idleTimer) {
-    clearTimeout(idleTimer);
-    idleTimer = null;
-  }
-  browserUsers++;
-
-  const current = sharedBrowser ? await sharedBrowser.catch(() => null) : null;
-  if (current?.isConnected()) return current;
-
-  const { chromium } = await import("playwright");
-  sharedBrowser = chromium.launch({
-    headless: true,
-    args: ["--disable-blink-features=AutomationControlled"],
-  });
-  try {
-    return await sharedBrowser;
-  } catch (error) {
-    sharedBrowser = null;
-    browserUsers--;
-    throw error;
-  }
-}
-
-function releaseBrowser() {
-  browserUsers = Math.max(0, browserUsers - 1);
-  if (browserUsers > 0 || !sharedBrowser) return;
-  idleTimer = setTimeout(() => {
-    const closing = sharedBrowser;
-    sharedBrowser = null;
-    idleTimer = null;
-    void closing?.then((b) => b.close()).catch(() => undefined);
-  }, BROWSER_IDLE_CLOSE_MS);
-}
-
-async function withTurkeyBrowser<T>(
+function withTurkeyBrowser<T>(
   fn: (page: import("playwright").Page) => Promise<T>
 ): Promise<T> {
-  const browser = await acquireBrowser();
-  let context: import("playwright").BrowserContext | undefined;
-
-  try {
-    context = await browser.newContext({
-      userAgent: BROWSER_HEADERS["User-Agent"],
+  return withBrowserPage(
+    {
       locale: "tr-TR",
       timezoneId: "Europe/Istanbul",
-      viewport: { width: 1366, height: 768 },
       extraHTTPHeaders: {
         "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8",
       },
-    });
-
-    await context.addInitScript(() => {
-      Object.defineProperty(navigator, "webdriver", {
-        get: () => undefined,
-      });
-    });
-
-    const page = await context.newPage();
-    return await fn(page);
-  } finally {
-    await context?.close().catch(() => undefined);
-    releaseBrowser();
-  }
+    },
+    fn
+  );
 }
 
 function extractTrendyolTitle(card: {

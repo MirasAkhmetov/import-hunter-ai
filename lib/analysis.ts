@@ -190,15 +190,19 @@ function buildVerifiedMarketplaceResult(
   };
 }
 
+/** Есть ли у результата реальная цена закупки (не «не найдено» и не нулевая цена). */
+function hasRealPurchasePrice(item: MarketplaceResultData): boolean {
+  return (
+    item.searchMethod !== "not_found" &&
+    !item.isMockPrice &&
+    getMarketplaceDisplayPrice(item) > 0
+  );
+}
+
 function pickCheapestVerifiedResult(
   results: MarketplaceResultData[]
 ): MarketplaceResultData | undefined {
-  const verified = results.filter(
-    (item) =>
-      item.searchMethod !== "not_found" &&
-      !item.isMockPrice &&
-      getMarketplaceDisplayPrice(item) > 0
-  );
+  const verified = results.filter(hasRealPurchasePrice);
   if (verified.length === 0) return undefined;
 
   return [...verified].sort((a, b) => {
@@ -418,7 +422,8 @@ export async function runAnalysis(
             linkStatus: r.linkStatus ?? "needs_review",
             priceVerifiedAt: r.priceVerifiedAt ? new Date(r.priceVerifiedAt) : new Date(),
             isMockPrice: r.isMockPrice ?? false,
-            profitAnalyses: r.profit
+            // Прибыль без реальной цены закупки (цена 0) исказила бы дашборд и экспорт
+            profitAnalyses: r.profit && hasRealPurchasePrice(r)
               ? {
                   create: {
                     productId,
@@ -532,15 +537,18 @@ export async function runAnalysis(
       kaspiPrice: kaspiProduct.price,
       analyzedAt: new Date().toISOString(),
       status: "completed",
-      marketplaceResults: resultsWithProfit.map((r, i) => ({
-        id: marketplaceResultIds[i]!,
-        marketplace: r.marketplace,
-        country: r.country,
-        title: r.title,
-        profit: r.profit!,
-        riskScore: r.riskScore,
-        matchScore: r.matchScore ?? r.finalMatchScore,
-      })),
+      marketplaceResults: resultsWithProfit
+        .map((r, i) => ({ r, id: marketplaceResultIds[i]! }))
+        .filter(({ r }) => hasRealPurchasePrice(r))
+        .map(({ r, id }) => ({
+          id,
+          marketplace: r.marketplace,
+          country: r.country,
+          title: r.title,
+          profit: r.profit!,
+          riskScore: r.riskScore,
+          matchScore: r.matchScore ?? r.finalMatchScore,
+        })),
     });
   }
 

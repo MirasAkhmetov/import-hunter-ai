@@ -300,7 +300,7 @@ function generateRecommendationHeuristic(
       )
     : 0;
 
-  return `${exactLabel}${visualLabel}${warningLabel}Лучший вариант — ${name}. Итоговое совпадение ${match}%, цена ниже Kaspi примерно на ${priceDiff}%. После доставки и комиссии Kaspi потенциальная прибыль составляет ${profit.toLocaleString("ru-RU")} ₸, ROI ${roi.toFixed(0)}%. Риск ${risk}, нужно проверить оригинальность товара и условия возврата.`;
+  return `${exactLabel}${visualLabel}${warningLabel}Лучший вариант — ${name}. Итоговое совпадение ${match}%, цена ${priceDiff >= 0 ? "ниже" : "выше"} Kaspi примерно на ${Math.abs(priceDiff)}%. После доставки и комиссии Kaspi потенциальная прибыль составляет ${profit.toLocaleString("ru-RU")} ₸, ROI ${roi.toFixed(0)}%. Риск ${risk}, нужно проверить оригинальность товара и условия возврата.`;
 }
 
 export function buildSearchQuery(product: ParsedProduct): ProductSearchQuery {

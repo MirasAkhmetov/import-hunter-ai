@@ -13,6 +13,11 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 echo "Node.js: $(node -v)"
 
+if [ ! -d "/Applications/Google Chrome.app" ] && [ ! -d "$HOME/Applications/Google Chrome.app" ]; then
+  echo "[ВНИМАНИЕ] Google Chrome не найден. Без него Wildberries и Trendyol могут блокировать поиск."
+  echo "Установите Chrome: https://www.google.com/chrome"
+fi
+
 trap 'echo; echo "[ОШИБКА] Установка не завершена — см. текст выше."; read -r -p "Нажмите Enter для выхода..."' ERR
 
 echo; echo "[1/3] Установка зависимостей..."

@@ -10,6 +10,7 @@ AI-ассистент по поиску прибыльных товаров дл
 
 **Один раз установить:**
 1. [Node.js LTS](https://nodejs.org) — при установке оставьте все галочки по умолчанию.
+   [Google Chrome](https://www.google.com/chrome) — через него идёт поиск: Wildberries и Trendyol блокируют встроенный браузер Playwright.
 2. Git: Windows — [git-scm.com/download/win](https://git-scm.com/download/win); Mac — выполните `xcode-select --install` в Терминале.
 3. Скачать проект: откройте командную строку (Windows: `cmd`, Mac: Терминал) в папке, куда положить проект, и выполните
    `git clone https://github.com/MirasAkhmetov/import-hunter-ai.git`
@@ -32,7 +33,8 @@ AI-ассистент по поиску прибыльных товаров дл
 ## Возможности MVP
 
 - Парсинг товара Kaspi (HTML + fallback через Playwright)
-- Поиск аналогов: Trendyol, Hepsiburada, n11 (Турция), Wildberries, Ozon (Россия)
+- Поиск аналогов: Trendyol, Hepsiburada, n11 (Турция), Wildberries (Россия)
+- Ozon выключен: блокирует автоматический доступ (включить для проверки — `OZON_ENABLED=true`)
 - Amazon.ae, Noon, Flipkart, Amazon India, Meesho, Китай — пока заготовки (отключены)
 - AI-сопоставление товаров (OpenAI или эвристика)
 - Расчёт прибыли, маржи и ROI

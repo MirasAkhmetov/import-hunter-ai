@@ -83,7 +83,7 @@ export async function searchMarketplaces(
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown provider error";
-      console.warn(`Provider ${provider.name} failed:`, error);
+      console.warn(`[${provider.marketplace}] площадка недоступна: ${message}`);
       providerStatuses.push({
         marketplace: provider.marketplace,
         name: provider.name,

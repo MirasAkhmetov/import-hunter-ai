@@ -67,7 +67,8 @@ export function createRussiaProvider(
         );
         collected.push(...results);
       } catch (error) {
-        console.warn(`[${marketplace}] search failed for "${searchTerm}":`, error);
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn(`[${marketplace}] поиск "${searchTerm}" не удался: ${reason}`);
       }
     }
 

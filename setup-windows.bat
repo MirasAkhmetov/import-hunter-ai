@@ -12,6 +12,12 @@ where node >nul 2>nul
 if errorlevel 1 goto :nonode
 for /f "delims=" %%v in ('node -v') do echo Node.js: %%v
 
+set "CHROME_FOUND="
+if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "CHROME_FOUND=1"
+if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "CHROME_FOUND=1"
+if exist "%LocalAppData%\Google\Chrome\Application\chrome.exe" set "CHROME_FOUND=1"
+if not defined CHROME_FOUND echo [ВНИМАНИЕ] Google Chrome не найден. Без него Wildberries и Trendyol могут блокировать поиск. Установите Chrome: https://www.google.com/chrome
+
 echo.
 echo [1/3] Установка зависимостей...
 call npm install

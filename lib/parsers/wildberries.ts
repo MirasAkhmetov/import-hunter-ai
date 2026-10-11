@@ -1,5 +1,6 @@
 import type { MarketplaceResultData, ParsedProduct } from "../types";
 import { BROWSER_HEADERS } from "../price-verification/htmlPriceExtractor";
+import { withBrowserPage } from "../browser/sharedBrowser";
 
 const WB_DEST = process.env.WB_DEST ?? "-1257786";
 
@@ -18,6 +19,8 @@ interface WbProduct {
   feedbacks?: number;
   nmFeedbacks?: number;
   sizes?: WbSizePrice[];
+  /** Картинка из карточки на странице (сервер basket-NN заранее не вычислить) */
+  imageUrl?: string;
 }
 
 interface WbCardMeta {
@@ -115,16 +118,85 @@ async function fetchWbCardMeta(nmId: number): Promise<WbCardMeta | null> {
   }
 }
 
+const WB_PAGE_TIMEOUT_MS = 30_000;
+
+/**
+ * Прямые API Wildberries (search.wb.ru, card.wb.ru) отвечают 403 на запросы не из браузера.
+ * Открываем страницу WB в браузере и забираем товары из JSON-ответов, которые запрашивает сама страница.
+ */
+async function captureWbProducts(
+  pageUrl: string,
+  isTargetResponse: (url: string) => boolean
+): Promise<WbProduct[]> {
+  return withBrowserPage(
+    {
+      locale: "ru-RU",
+      extraHTTPHeaders: { "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8" },
+    },
+    async (page) => {
+      let resolveProducts: (products: WbProduct[]) => void = () => {};
+      const captured = new Promise<WbProduct[]>((resolve) => {
+        resolveProducts = resolve;
+      });
+
+      page.on("response", async (response) => {
+        if (!response.ok() || !isTargetResponse(response.url())) return;
+        try {
+          const products = parseWbSearchProducts(await response.json());
+          if (products.length > 0) resolveProducts(products);
+        } catch {
+          // не JSON или страница уже закрыта
+        }
+      });
+
+      await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+
+      const timeout = new Promise<WbProduct[]>((resolve) =>
+        setTimeout(() => resolve([]), WB_PAGE_TIMEOUT_MS)
+      );
+      const products = await Promise.race([captured, timeout]);
+      if (products.length === 0) return products;
+
+      // Адреса картинок берём из отрисованных карточек товаров
+      await page.waitForSelector(".product-card img", { timeout: 5000 }).catch(() => undefined);
+      const images = await page
+        .evaluate(() =>
+          [...document.querySelectorAll(".product-card")].map(
+            (card): [string, string] => [
+              card.getAttribute("data-nm-id") ?? "",
+              card.querySelector("img")?.getAttribute("src") ?? "",
+            ]
+          )
+        )
+        .catch((): Array<[string, string]> => []);
+      const imageById = new Map<string, string>(images.filter(([id, src]) => id && src));
+      return products.map((product) => ({
+        ...product,
+        imageUrl: imageById.get(String(product.id)) ?? product.imageUrl,
+      }));
+    }
+  );
+}
+
 async function fetchWbSearchRaw(query: string): Promise<WbProduct[]> {
-  const q = encodeURIComponent(query);
-  const url = `https://search.wb.ru/exactmatch/ru/common/v18/search?query=${q}&page=1&dest=${WB_DEST}&curr=rub&lang=ru&resultset=catalog&sort=popular&appType=1&spp=30`;
-
-  const response = await wbFetch(url);
-  if (!response.ok) {
-    throw new Error(`WB_SEARCH_FAILED: ${response.status}`);
+  const pageUrl = `https://www.wildberries.ru/catalog/0/search.aspx?search=${encodeURIComponent(query)}`;
+  const products = await captureWbProducts(
+    pageUrl,
+    (url) => /\/search\?/.test(url) && /u-search|search\.wb\.ru/.test(url)
+  );
+  if (products.length === 0) {
+    throw new Error("WB_SEARCH_FAILED");
   }
+  return products;
+}
 
-  return parseWbSearchProducts(await response.json());
+async function fetchWbProductFromPage(nmId: number): Promise<WbProduct | null> {
+  const products = await captureWbProducts(
+    `https://www.wildberries.ru/catalog/${nmId}/detail.aspx`,
+    (url) => url.includes("/detail") && url.includes(String(nmId))
+  ).catch(() => []);
+  const exact = products.find((p) => p.id === nmId);
+  return exact && wbPriceRub(exact) > 0 ? exact : null;
 }
 
 function mapWbProduct(product: WbProduct): MarketplaceResultData {
@@ -139,7 +211,7 @@ function mapWbProduct(product: WbProduct): MarketplaceResultData {
     price: wbPriceRub(product),
     currency: "RUB",
     url: `https://www.wildberries.ru/catalog/${product.id}/detail.aspx`,
-    imageUrl: buildWbImageUrl(product.id),
+    imageUrl: product.imageUrl ?? buildWbImageUrl(product.id),
     sellerRating: product.rating ?? product.reviewRating,
     priceSource: "search_result",
     isMockPrice: false,
@@ -168,6 +240,9 @@ async function fetchWbProductByNmId(nmId: number): Promise<WbProduct | null> {
       // try next endpoint
     }
   }
+
+  const fromPage = await fetchWbProductFromPage(nmId);
+  if (fromPage) return fromPage;
 
   const meta = await fetchWbCardMeta(nmId);
   const brand = meta?.selling?.brand_name ?? "";
